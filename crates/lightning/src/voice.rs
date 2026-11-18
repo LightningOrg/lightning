@@ -72,7 +72,9 @@ impl Voice {
         Self {
             inner: Arc::new(Inner {
                 http,
-                config: Config::default(),
+                // One shared disposal thread for every call, instead of one per
+                // guild: `Config` is cloned, and the thread handle is shared.
+                config: Config::default().disposer(songbird::driver::DisposalThread::run()),
                 states,
                 calls: DashMap::new(),
                 senders: Arc::new(RwLock::new(HashMap::new())),
