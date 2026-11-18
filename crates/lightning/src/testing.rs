@@ -1,7 +1,7 @@
-//! Testing sin Discord.
+//! Testing without Discord.
 //!
-//! Como el envío de mensajes es el trait [`lightning_core::Responder`], puedes
-//! capturar las respuestas de tus handlers:
+//! Because sending messages is the [`lightning_core::Responder`] trait, you can
+//! capture your handlers' replies:
 //!
 //! ```
 //! use lightning::prelude::*;
@@ -13,7 +13,7 @@
 //! }
 //!
 //! # #[tokio::test]
-//! # async fn ejemplo() {
+//! # async fn example() {
 //! let (ctx, responder) = mock_context("ping");
 //! let reply = ping(ctx).await;
 //! ctx.reply(reply).await.unwrap();
@@ -28,7 +28,7 @@ use std::sync::{Arc, Mutex};
 use lightning_core::context::Responder;
 use lightning_core::{Context, Reply, Result};
 
-/// Responde guardando todo en memoria.
+/// Responder that records everything in memory.
 #[derive(Debug, Default)]
 pub struct MockResponder {
     sent: Mutex<Vec<Reply>>,
@@ -36,36 +36,36 @@ pub struct MockResponder {
 }
 
 impl MockResponder {
-    /// Crea un responder vacío.
+    /// Creates an empty responder.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Copia de todos los mensajes enviados.
+    /// Copy of every message sent so far.
     pub fn sent(&self) -> Vec<Reply> {
-        self.sent.lock().expect("lock envenenado").clone()
+        self.sent.lock().expect("poisoned lock").clone()
     }
 
-    /// Extrae y vacía los mensajes enviados.
+    /// Takes and clears the messages sent so far.
     pub fn take(&self) -> Vec<Reply> {
-        std::mem::take(&mut *self.sent.lock().expect("lock envenenado"))
+        std::mem::take(&mut *self.sent.lock().expect("poisoned lock"))
     }
 
-    /// ¿Se hizo `defer`?
+    /// Was `defer` called?
     pub fn is_deferred(&self) -> bool {
         self.deferred.load(Ordering::SeqCst)
     }
 
-    /// Último mensaje enviado.
+    /// Last message sent.
     pub fn last(&self) -> Option<Reply> {
-        self.sent.lock().expect("lock envenenado").last().cloned()
+        self.sent.lock().expect("poisoned lock").last().cloned()
     }
 }
 
 #[lightning_core::async_trait]
 impl Responder for MockResponder {
     async fn respond(&self, reply: Reply) -> Result<()> {
-        self.sent.lock().expect("lock envenenado").push(reply);
+        self.sent.lock().expect("poisoned lock").push(reply);
 
         Ok(())
     }
@@ -80,7 +80,7 @@ impl Responder for MockResponder {
     }
 }
 
-/// Crea un [`Context`] de prueba y su responder.
+/// Creates a test [`Context`] and its responder.
 pub fn mock_context(command: &'static str) -> (Context, Arc<MockResponder>) {
     let responder = Arc::new(MockResponder::new());
     let context = Context::test(command, responder.clone());

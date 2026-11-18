@@ -1,57 +1,57 @@
-# ⚡ Lightning
+# Lightning
 
 [![CI](https://github.com/ImDaiDev/lightning/actions/workflows/ci.yml/badge.svg)](https://github.com/ImDaiDev/lightning/actions/workflows/ci.yml)
-[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#licencia)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 [![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
 
-**Bots de Discord a la velocidad del rayo.**
+**Discord bots at lightning speed.**
 
-Lightning es un framework de Rust para construir bots de Discord con una idea
-central: si ya sabes escribir una función `async`, ya sabes escribir un comando.
+Lightning is a Rust framework for building Discord bots with one central idea:
+if you can write an `async` function, you can write a command.
 
 ```rust
-/// Responde con pong ⚡
+/// Replies with pong
 #[command]
 async fn ping(ctx: Context) -> Reply {
-    Reply::text(format!("pong ⚡ hola, {}", ctx.user.name))
+    Reply::text(format!("pong, {}!", ctx.user.name))
 }
 ```
 
-Eso es todo. Ese comando ya responde a `/ping` **y** a `!ping`, aparece
-registrado en Discord y se puede testear sin conexión.
+That's it. That command already answers both `/ping` and `!ping`, gets registered
+with Discord, and can be tested without a network connection.
 
-> **Estado:** alpha (`0.1.0`). La API puede cambiar antes de `1.0`.
-> Motor: [twilight](https://twilight.rs) `0.18`.
+> **Status:** alpha (`0.1.0`). The API may change before `1.0`.
+> Engine: [twilight](https://twilight.rs) `0.18`.
 
 ---
 
-## ¿Por qué otro framework?
+## Why another framework?
 
-| | Lightning | Serenity | Twilight puro |
+| | Lightning | Serenity | Raw Twilight |
 |---|---|---|---|
-| Comandos slash | ✅ macro `#[command]` | ✅ macro | ❌ a mano |
-| Comandos de prefijo | ✅ **el mismo comando** | ⚠️ otro sistema | ❌ a mano |
-| Registro automático | ✅ `inventory` | ❌ lista manual | ❌ lista manual |
-| Argumentos tipados | ✅ `Args<T>` + derive | ⚠️ parseo manual | ❌ a mano |
-| Extractores tipo axum | ✅ `Context`, `State<T>`, `Guild`… | ❌ | ❌ |
-| Middleware estilo tower | ✅ `next.run(ctx)` | ⚠️ hooks | ❌ |
-| Testing sin Discord | ✅ `Responder` es un trait | ⚠️ mocks manuales | ❌ |
-| Sharding | ✅ automático | ✅ | ⚠️ manual |
+| Slash commands | ✅ `#[command]` macro | ✅ macro | ❌ manual |
+| Prefix commands | ✅ **the same command** | ⚠️ separate system | ❌ manual |
+| Automatic registration | ✅ `inventory` | ❌ manual list | ❌ manual list |
+| Typed arguments | ✅ `Args<T>` + derive | ⚠️ manual parsing | ❌ manual |
+| axum-style extractors | ✅ `Context`, `State<T>`, `Guild`… | ❌ | ❌ |
+| tower-style middleware | ✅ `next.run(ctx)` | ⚠️ hooks | ❌ |
+| Testing without Discord | ✅ `Responder` is a trait | ⚠️ hand-rolled mocks | ❌ |
+| Sharding | ✅ automatic | ✅ | ⚠️ manual |
 
-La personalidad de Lightning está en tres decisiones:
+Lightning's personality comes from three decisions:
 
-1. **Un comando, dos superficies.** Una sola función, una sola struct de
-   argumentos, pero responde a `/eco` y a `!eco`.
-2. **Todo se descubre solo.** Escribes la función y el framework la encuentra.
-3. **Todo es testeable.** El envío de mensajes es un trait: en producción habla
-   HTTP con Discord; en tests apunta a un `Vec`.
+1. **One command, two surfaces.** One function, one argument struct, but it
+   answers to both `/echo` and `!echo`.
+2. **Everything is discovered.** You write the function and the framework finds
+   it.
+3. **Everything is testable.** Sending messages is a trait: in production it
+   speaks HTTP with Discord; in tests it points at a `Vec`.
 
 ---
 
-## Instalación
+## Installation
 
-Lightning todavía no está en crates.io. Usa el workspace como dependencia de
-ruta:
+Lightning is not on crates.io yet. Use the workspace as a path dependency:
 
 ```toml
 # Cargo.toml
@@ -60,123 +60,123 @@ lightning = { path = "../Lightning/crates/lightning" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
-Rust **1.85+** (edición 2024).
+Rust **1.85+** (edition 2024).
 
 ---
 
-## 30 segundos
+## 30 seconds
 
 ```rust
 use lightning::prelude::*;
 
-/// Responde con pong ⚡
+/// Replies with pong
 #[command]
 async fn ping(ctx: Context) -> Reply {
-    Reply::text(format!("pong ⚡ hola, {}", ctx.user.name))
+    Reply::text(format!("pong, {}!", ctx.user.name))
 }
 
 #[lightning::main]
 async fn main() {
     Lightning::new()
-        .token_from_env()   // lee DISCORD_TOKEN
-        .prefix("!")        // activa también los comandos de prefijo
+        .token_from_env()   // reads DISCORD_TOKEN
+        .prefix("!")        // also enables prefix commands
         .run()
         .await
-        .expect("el bot se ha caído");
+        .expect("the bot crashed");
 }
 ```
 
 ```powershell
-$env:DISCORD_TOKEN = "tu-token"
+$env:DISCORD_TOKEN = "your-token"
 cargo run -p examples-basics
 ```
 
-Al arrancar verás el banner:
+On startup you'll see the banner:
 
 ```
-  ⚡ Lightning v0.1.0
+  Lightning v0.1.0
   ─────────────────────────────────────
   Bot         Lightning#1234
-  Servidores  3
-  Comandos    6
+  Servers     3
+  Commands    6
   Shards      1
 ```
 
 ---
 
-## El modelo mental
+## The mental model
 
-### Un comando, dos superficies
+### One command, two surfaces
 
 ```rust
 #[command]
-async fn ping(ctx: Context) -> Reply { /* /ping y !ping */ }
+async fn ping(ctx: Context) -> Reply { /* /ping and !ping */ }
 ```
 
-El atributo `kind` cambia esto cuando lo necesites:
+The `kind` attribute changes this when you need to:
 
 ```rust
-#[command(kind = "slash")]   // solo /ping
-#[command(kind = "prefix")]  // solo !ping
+#[command(kind = "slash")]   // only /ping
+#[command(kind = "prefix")]  // only !ping
 ```
 
-Los alias solo afectan al prefijo:
+Aliases only affect the prefix surface:
 
 ```rust
-#[command(aliases = ["rep", "say"])]
-async fn eco(/* … */) {}
+#[command(aliases = ["say", "repeat"])]
+async fn echo(/* … */) {}
 ```
 
-### Argumentos
+### Arguments
 
-Declara una struct normal y deriva `CommandArgs`. Los **doc comments de los
-campos se convierten en las descripciones de Discord**:
+Declare a normal struct and derive `CommandArgs`. The **field doc comments
+become the Discord option descriptions**:
 
 ```rust
 #[derive(CommandArgs)]
-struct Eco {
-    /// Qué debe repetir el bot
-    texto: String,
-    /// Cuántas veces repetirlo
-    veces: Option<u8>,
+struct Echo {
+    /// What the bot should repeat
+    text: String,
+    /// How many times to repeat it
+    times: Option<u8>,
 }
 
 #[command]
-async fn eco(args: Args<Eco>) -> Reply {
-    let veces = args.veces.unwrap_or(1);
-    Reply::text(args.texto.repeat(veces as usize))
+async fn echo(args: Args<Echo>) -> Reply {
+    let times = args.times.unwrap_or(1);
+    Reply::text(args.text.repeat(times as usize))
 }
 ```
 
-- `/eco texto: hola veces: 2` → opciones de Discord tipadas.
-- `!eco hola 2` → parser posicional con comillas (`!eco "hola mundo" 2`).
-- Los campos `Option<T>` son opcionales en ambas superficies.
-- Marca `#[arg(rest)]` para capturar el resto de la línea en un `String`.
+- `/echo text: hello times: 2` → typed Discord options.
+- `!echo hello 2` → positional parser with quotes (`!echo "hello world" 2`).
+- `Option<T>` fields are optional on both surfaces.
+- Mark a field `#[arg(rest)]` to capture the rest of the line into a `String`.
 
-Tipos soportados: `String`, enteros, `f32`/`f64`, `bool`, `char`, `Id<T>`,
-`Option<T>`, `Vec<T>` y `serde_json::Value`.
+Supported types: `String`, integers, `f32`/`f64`, `bool`, `char`, `Id<T>`,
+`Option<T>`, `Vec<T>` and `serde_json::Value`.
 
-### Extractores
+### Extractors
 
-La firma de la función es la documentación: pide lo que necesites y Lightning lo
-inyecta.
+The function signature is the documentation: ask for what you need and
+Lightning injects it.
 
-| Extractor | Qué te da |
+| Extractor | What you get |
 |---|---|
-| `Context` | usuario, guild, canal, interacción… |
-| `Args<T>` | argumentos tipados |
-| `State<T>` | un estado inyectado con `.state(…)` |
-| `Guild` | id del servidor (falla en DM) |
-| `Member` | miembro que invocó |
-| `Author` | autor como `User` |
-| `ChannelId` | canal actual |
-| `Message` | mensaje de origen (prefijo) |
-| `Interaction` | interacción original |
-| `Values` | valores de un menú de selección |
+| `Context` | user, guild, channel, interaction… |
+| `Args<T>` | typed arguments |
+| `State<T>` | a state injected with `.state(…)` |
+| `Guild` | guild id (fails in DMs) |
+| `Member` | the member who invoked the command |
+| `Author` | author as a `User` |
+| `ChannelId` | current channel |
+| `Message` | source message (prefix) |
+| `Interaction` | the raw interaction |
+| `Values` | values from a select menu |
 
 ### Middleware
 
-Capas que envuelven la ejecución, con la misma idea que tower.
+Layers that wrap execution, following the same idea as tower.
 
 ```rust
 use std::time::Duration;
@@ -185,22 +185,22 @@ let bot = Lightning::new()
     .middleware(Cooldown::per_user(Duration::from_secs(3)));
 ```
 
-Y puedes escribir las tuyas con un closure…
+You can write your own with a closure…
 
 ```rust
 let logging = |ctx: Context, next: Next| async move {
-    println!("→ {}", ctx.command);
+    println!("-> {}", ctx.command);
     next.run(ctx).await
 };
 ```
 
-…o con el trait, si necesitas estado:
+…or with the trait, if you need state:
 
 ```rust
 #[lightning::async_trait]
-impl Middleware for SoloAdmins {
+impl Middleware for AdminsOnly {
     async fn handle(&self, ctx: Context, next: Next) -> Result<Reply> {
-        if !es_admin(&ctx) {
+        if !is_admin(&ctx) {
             return Err(Error::Forbidden);
         }
         next.run(ctx).await
@@ -208,84 +208,84 @@ impl Middleware for SoloAdmins {
 }
 ```
 
-También por comando:
+Per command too:
 
 ```rust
 #[command(middleware = [Cooldown::per_user(Duration::from_secs(30))])]
-async fn lento() -> Reply { /* … */ }
+async fn slow() -> Reply { /* … */ }
 ```
 
-### Estado
+### State
 
 ```rust
 struct Db(sqlx::PgPool);
 
-let pool = /* tu pool */;
+let pool = /* your pool */;
 
 Lightning::new().state(Db(pool));
-// o, si prefieres compartir el Arc:
+// or, if you prefer sharing the Arc:
 // Lightning::new().state_arc(std::sync::Arc::new(Db(pool)));
 ```
 
 ```rust
 #[command]
-async fn usuarios(db: State<Db>) -> Reply {
+async fn users(db: State<Db>) -> Reply {
     let total = sqlx::query_scalar("select count(*) from users")
         .fetch_one(&db.0)
         .await?;
-    Reply::text(format!("{total} usuarios"))
+    Reply::text(format!("{total} users"))
 }
 ```
 
-### Botones y modales
+### Buttons and modals
 
 ```rust
 #[command]
-async fn confirmar() -> Reply {
-    Reply::text("¿Seguro?").components(vec![
+async fn confirm() -> Reply {
+    Reply::text("Are you sure?").components(vec![
         ActionRow::new()
-            .button(Button::success(r#"confirm:{"choice":"yes"}"#, "Sí"))
+            .button(Button::success(r#"confirm:{"choice":"yes"}"#, "Yes"))
             .button(Button::danger(r#"confirm:{"choice":"no"}"#, "No")),
     ])
 }
 
-#[component("confirm")]  // atiende cualquier custom_id que empiece por `confirm`
+#[component("confirm")]  // handles any custom_id starting with `confirm`
 async fn on_confirm(args: Args<Choice>) -> Reply {
     match args.choice.as_str() {
-        "yes" => Reply::text("¡hecho! ⚡"),
-        _ => Reply::text("cancelado"),
+        "yes" => Reply::text("done!"),
+        _ => Reply::text("cancelled"),
     }
 }
 ```
 
-El trozo después de `:` se parsea como JSON y llega como `Args<T>`, así que el
-estado de un botón viaja **tipado**. Los modales se responden con
-`Reply::modal(Modal::new("id", "Título").text_input(...))`.
+The part after `:` is parsed as JSON and delivered as `Args<T>`, so a button's
+state travels **typed**. Modals are answered with
+`Reply::modal(Modal::new("id", "Title").text_input(...))`.
 
-### Eventos
+### Events
 
 ```rust
 use lightning::model::incoming::MemberAdd;
 
 #[event(MemberAdd)]
-async fn bienvenida(evento: &MemberAdd) {
-    println!("entró {}", evento.user.name);
+async fn welcome(event: &MemberAdd) {
+    println!("{} joined", event.user.name);
 }
 ```
 
-Si añades un segundo parámetro, recibes un `EventContext` con HTTP y estados:
+Add a second parameter to receive an `EventContext` with HTTP and state:
 
 ```rust
 #[event(MessageCreate)]
-async fn log(evento: &MessageCreate, ctx: EventContext) {
+async fn log(event: &MessageCreate, ctx: EventContext) {
     let _ = ctx.http;
 }
 ```
 
 ### Sharding
 
-Lightning pide a Discord el número recomendado de shards y arranca uno por shard,
-compartiendo el mismo estado y registro de comandos. Si quieres forzarlo:
+Lightning asks Discord for the recommended shard count and spawns one shard per
+task, all sharing the same state and command registry. To force a value:
 
 ```rust
 Lightning::new().shards(4)
@@ -297,7 +297,7 @@ Lightning::new().shards(4)
 use lightning::testing::mock_context;
 
 #[tokio::test]
-async fn ping_responde() {
+async fn ping_replies() {
     let (ctx, responder) = mock_context("ping");
 
     let reply = ping(ctx.clone()).await;
@@ -305,42 +305,42 @@ async fn ping_responde() {
 
     assert_eq!(
         responder.last().unwrap().content.as_deref(),
-        Some("pong test"),
+        Some("pong, test!"),
     );
 }
 ```
 
-Cero red, cero token, cero Discord.
+No network, no token, no Discord.
 
 ---
 
-## Referencia de `#[command]`
+## `#[command]` reference
 
-| Atributo | Ejemplo | Descripción |
+| Attribute | Example | Description |
 |---|---|---|
-| `name` | `name = "eco"` | Nombre del comando |
-| `description` | `description = "Repite"` | Si falta, usa el doc comment |
-| `kind` | `kind = "slash"` | `slash`, `prefix` o `both` (defecto) |
-| `aliases` | `aliases = ["rep"]` | Alias de prefijo |
-| `guild_only` | `guild_only` | Solo en servidores |
-| `nsfw` | `nsfw` | Marca el comando como NSFW |
-| `permissions` | `permissions = 8` | Permisos por defecto (bits) |
-| `middleware` | `middleware = [MiCapa]` | Capas propias del comando |
-| `auto_register` | `auto_register = "false"` | Desactiva el auto-registro |
+| `name` | `name = "echo"` | Command name |
+| `description` | `description = "Repeats"` | Falls back to the doc comment |
+| `kind` | `kind = "slash"` | `slash`, `prefix` or `both` (default) |
+| `aliases` | `aliases = ["say"]` | Prefix aliases |
+| `guild_only` | `guild_only` | Guilds only |
+| `nsfw` | `nsfw` | Marks the command as NSFW |
+| `permissions` | `permissions = 8` | Default permissions (bits) |
+| `middleware` | `middleware = [MyLayer]` | Command-specific layers |
+| `auto_register` | `auto_register = "false"` | Disables auto-registration |
 
 ---
 
-## Estructura del repo
+## Repository layout
 
 ```
 Lightning/
 ├── crates/
-│   ├── lightning-core/    # modelo, contexto, extractores, middleware, Reply
+│   ├── lightning-core/    # model, context, extractors, middleware, Reply
 │   ├── lightning-macros/  # #[command], #[event], #[component], #[main], derive
-│   └── lightning/         # runtime: Gateway, HTTP, sharding, registro
+│   └── lightning/         # runtime: Gateway, HTTP, sharding, registration
 ├── examples/
-│   └── basics/            # bot de ejemplo completo
-├── ARCHITECTURE.md        # cómo funciona por dentro y por qué
+│   └── basics/            # complete example bot
+├── ARCHITECTURE.md        # how it works inside and why
 └── Cargo.toml             # workspace
 ```
 
@@ -354,18 +354,18 @@ cargo run -p examples-basics
 
 ## Roadmap
 
-- [ ] Autocompletado tipado (`#[autocomplete]`).
-- [ ] Subcomandos y grupos (`#[subcommand]`).
-- [ ] Menús de selección de primera clase.
-- [ ] Sharding por `ShardManager` y `twilight-gateway-queue` (hoy: shards propios).
-- [ ] `lightning dev` con recarga en caliente.
-- [ ] Publicación en crates.io.
+- [ ] Typed autocomplete (`#[autocomplete]`).
+- [ ] Subcommands and groups (`#[subcommand]`).
+- [ ] First-class select menus.
+- [ ] Sharding through `ShardManager` and `twilight-gateway-queue` (today: own shards).
+- [ ] `lightning dev` with hot reload.
+- [ ] Publishing to crates.io.
 
 ---
 
-## Licencia
+## License
 
-MIT OR Apache-2.0. Puedes elegir la que prefieras:
+MIT OR Apache-2.0. Pick whichever you prefer:
 
 - [`LICENSE-MIT`](LICENSE-MIT)
 - [`LICENSE-APACHE`](LICENSE-APACHE)

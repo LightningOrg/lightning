@@ -1,6 +1,6 @@
 [package]
 name = "lightning-core"
-description = "Núcleo agnóstico de ⚡ Lightning: comandos, contexto, extractores, middleware y respuestas."
+description = "Agnostic core for Lightning: commands, context, extractors, middleware and replies."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

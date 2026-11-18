@@ -1,22 +1,22 @@
-//! ⚡ **Lightning** — bots de Discord a la velocidad del rayo.
+//! **Lightning** — Discord bots at lightning speed.
 //!
-//! Lightning es un framework de Rust para crear bots de Discord con tres ideas:
+//! Lightning is a Rust framework for building Discord bots around three ideas:
 //!
-//! 1. **Un comando, dos superficies**: el mismo `#[command]` responde a `/ping`
-//!    y a `!ping`, con los argumentos tipados una sola vez.
-//! 2. **Cero boilerplate**: los comandos se auto-registran con `inventory`; tú
-//!    solo escribes la función.
-//! 3. **Todo es testeable**: el envío de mensajes es un trait, así que puedes
-//!    probar tus handlers sin tocar Discord.
+//! 1. **One command, two surfaces**: the same `#[command]` answers to `/ping`
+//!    and `!ping`, with typed arguments defined once.
+//! 2. **Zero boilerplate**: commands register themselves with `inventory`; you
+//!    only write the function.
+//! 3. **Everything is testable**: sending messages is a trait, so you can test
+//!    your handlers without touching Discord.
 //!
-//! # Hola, mundo
+//! # Hello, world
 //!
 //! ```no_run
 //! use lightning::prelude::*;
 //!
 //! #[command]
 //! async fn ping(ctx: Context) -> Reply {
-//!     Reply::text(format!("pong ⚡ {}", ctx.user.name))
+//!     Reply::text(format!("pong, {}", ctx.user.name))
 //! }
 //!
 //! #[lightning::main]
@@ -30,23 +30,23 @@
 //! }
 //! ```
 //!
-//! # Argumentos tipados
+//! # Typed arguments
 //!
 //! ```no_run
 //! use lightning::prelude::*;
 //!
 //! #[derive(CommandArgs)]
-//! struct Eco {
-//!     /// Qué debe repetir el bot
-//!     texto: String,
-//!     /// Cuántas veces
-//!     veces: Option<u8>,
+//! struct Echo {
+//!     /// What the bot should repeat
+//!     text: String,
+//!     /// How many times
+//!     times: Option<u8>,
 //! }
 //!
 //! #[command]
-//! async fn eco(ctx: Context, args: Args<Eco>) -> Reply {
-//!     let veces = args.veces.unwrap_or(1);
-//!     Reply::text(args.texto.repeat(veces as usize))
+//! async fn echo(ctx: Context, args: Args<Echo>) -> Reply {
+//!     let times = args.times.unwrap_or(1);
+//!     Reply::text(args.text.repeat(times as usize))
 //! }
 //! ```
 //!
@@ -82,11 +82,11 @@ pub use lightning_core::{
     run_pipeline,
 };
 
-/// Utilidades para las macros (errores de argumentos).
+/// Helpers for the macros (argument errors).
 pub use lightning_core::args;
-/// El attribute macro de `async-trait`, re-exportado para tus middleware.
+/// The `async-trait` attribute macro, re-exported for your middleware.
 pub use lightning_core::async_trait;
-/// Re-export del módulo de middleware del núcleo.
+/// Re-export of the core middleware module.
 pub use lightning_core::middleware;
 
 pub use lightning_macros::{CommandArgs, command, component, event, main};
@@ -95,7 +95,7 @@ pub use lightning_macros::{CommandArgs, command, component, event, main};
 pub use inventory;
 pub use serde_json;
 
-/// Tipos de Twilight que vas a necesitar a diario.
+/// Twilight types you will need every day.
 pub mod model {
     pub use twilight_gateway::{Event, Intents};
     pub use twilight_model::channel::message::Message as DiscordMessage;
@@ -113,15 +113,15 @@ pub mod model {
 pub use twilight_model::gateway::Intents;
 pub use twilight_model::id::Id;
 
-/// Eventos del Gateway.
+/// Gateway events.
 pub use twilight_gateway::Event;
 
-/// Re-export del Gateway (shards, eventos...).
+/// Re-export of the Gateway (shards, events…).
 pub use twilight_gateway;
-/// Re-export del cliente HTTP por si necesitas usar la API directamente.
+/// Re-export of the HTTP client, in case you need the API directly.
 pub use twilight_http::Client;
 
-/// Lo que necesitas en el 99% de los archivos.
+/// What you need in 99% of your files.
 pub mod prelude {
     pub use crate::model::{DiscordMessage, Event, Id, Intents, PartialMember, User};
     pub use crate::{

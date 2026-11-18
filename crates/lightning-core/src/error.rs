@@ -1,80 +1,80 @@
-//! Errores del framework.
+//! Framework errors.
 //!
-//! Todo handler puede devolver `Result<_, Error>`: Lightning convierte el error
-//! en una respuesta efímera legible para el usuario y lo registra en `tracing`.
+//! Every handler can return `Result<_, Error>`: Lightning turns the error into a
+//! readable ephemeral reply for the user and logs it through `tracing`.
 
 use crate::reply::Reply;
 
-/// Alias de resultado que usa todo el framework.
+/// Result alias used across the framework.
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
-/// Error de un comando, extractor o middleware.
+/// Error produced by a command, extractor or middleware.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    /// Error definido por el usuario.
+    /// User-defined error.
     #[error("{0}")]
     Custom(String),
 
-    /// Falta un argumento obligatorio.
-    #[error("falta el argumento `{0}`")]
+    /// A required argument is missing.
+    #[error("missing required argument `{0}`")]
     MissingArgument(String),
 
-    /// Un argumento no se pudo convertir al tipo esperado.
-    #[error("el argumento `{name}` no es válido: {reason}")]
+    /// An argument could not be converted to the expected type.
+    #[error("invalid value for `{name}`: {reason}")]
     InvalidArgument {
-        /// Nombre del argumento.
+        /// Argument name.
         name: String,
-        /// Motivo del fallo.
+        /// Reason for the failure.
         reason: String,
     },
 
-    /// El comando solo funciona dentro de un servidor.
-    #[error("este comando solo funciona dentro de un servidor")]
+    /// The command only works inside a guild.
+    #[error("this command only works inside a server")]
     GuildOnly,
 
-    /// El comando solo funciona por mensaje directo.
-    #[error("este comando solo funciona por mensaje directo")]
+    /// The command only works in direct messages.
+    #[error("this command only works in direct messages")]
     DmOnly,
 
-    /// El usuario no tiene permiso para ejecutar el comando.
-    #[error("no tienes permiso para usar este comando")]
+    /// The user is not allowed to run the command.
+    #[error("you don't have permission to use this command")]
     Forbidden,
 
-    /// Se ha superado un límite de uso.
-    #[error("demasiadas invocaciones: inténtalo de nuevo en {retry_after_ms} ms")]
+    /// A usage limit was hit.
+    #[error("too many invocations: try again in {retry_after_ms} ms")]
     Cooldown {
-        /// Milisegundos que hay que esperar.
+        /// Milliseconds to wait.
         retry_after_ms: u64,
     },
 
-    /// El comando no existe en esta superficie (slash, prefijo, componente...).
-    #[error("este comando no está disponible en esta superficie")]
+    /// The command does not exist on this surface (slash, prefix, component…).
+    #[error("this command is not available on this surface")]
     UnsupportedSurface,
 
-    /// Un extractor no encontró el recurso que necesitaba.
-    #[error("falta el recurso `{0}` en el contexto")]
+    /// An extractor could not find the resource it needed.
+    #[error("missing `{0}` in the context")]
     MissingResource(&'static str),
 
-    /// No se ha inyectado un estado con ese tipo.
-    #[error("no se ha inyectado el estado `{0}`")]
+    /// No state of that type was injected.
+    #[error("state `{0}` was not injected")]
     MissingState(&'static str),
 
-    /// Fallo de red o de la API de Discord.
-    #[error("error hablando con Discord: {0}")]
+    /// Network or Discord API failure.
+    #[error("error talking to Discord: {0}")]
     Transport(String),
 
-    /// Fallo interno del framework.
-    #[error("error interno: {0}")]
+    /// Internal framework failure.
+    #[error("internal error: {0}")]
     Internal(String),
 }
 
 impl Error {
-    /// Crea un error propio a partir de cualquier cosa convertible a `String`.
+    /// Builds a custom error from anything convertible to `String`.
     pub fn custom(message: impl Into<String>) -> Self {
         Self::Custom(message.into())
     }
 
-    /// Construye el [`Reply`] que verá el usuario cuando el handler falle.
+    /// Builds the [`Reply`] the user sees when the handler fails.
     pub fn to_reply(&self) -> Reply {
         Reply::text(format!("❌ {self}")).ephemeral()
     }

@@ -1,4 +1,4 @@
-//! Conversión entre el modelo de Lightning y los tipos de Twilight.
+//! Conversion between Lightning's model and Twilight's types.
 
 use lightning_core::command::Command;
 use lightning_core::{Error, OptionKind, Reply, Result};
@@ -16,7 +16,7 @@ use twilight_model::http::interaction::{
 };
 use twilight_model::id::Id;
 
-/// Convierte los comandos del framework al modelo de Discord.
+/// Converts framework commands to Discord's model.
 #[allow(deprecated)]
 pub(crate) fn to_commands<'a>(commands: impl Iterator<Item = &'a Command>) -> Vec<TwilightCommand> {
     commands
@@ -79,7 +79,7 @@ pub(crate) fn to_embeds(reply: &Reply) -> Result<Vec<Embed>> {
         .cloned()
         .map(|value| {
             serde_json::from_value(value)
-                .map_err(|error| Error::Internal(format!("embed inválido: {error}")))
+                .map_err(|error| Error::Internal(format!("invalid embed: {error}")))
         })
         .collect()
 }
@@ -91,12 +91,12 @@ pub(crate) fn to_components(reply: &Reply) -> Result<Vec<Component>> {
         .cloned()
         .map(|value| {
             serde_json::from_value(value)
-                .map_err(|error| Error::Internal(format!("componente inválido: {error}")))
+                .map_err(|error| Error::Internal(format!("invalid component: {error}")))
         })
         .collect()
 }
 
-/// Respuesta inicial de una interacción.
+/// Initial response to an interaction.
 pub(crate) fn interaction_response(
     kind: InteractionResponseType,
     reply: &Reply,
@@ -140,7 +140,7 @@ pub(crate) fn interaction_response(
     })
 }
 
-/// Datos de una respuesta diferida.
+/// Deferred response data.
 pub(crate) fn deferred(ephemeral: bool) -> InteractionResponse {
     InteractionResponse {
         kind: InteractionResponseType::DeferredChannelMessageWithSource,
@@ -151,7 +151,7 @@ pub(crate) fn deferred(ephemeral: bool) -> InteractionResponse {
     }
 }
 
-/// Datos de una respuesta que actualiza el mensaje original (botones).
+/// Response data that updates the original message (buttons).
 pub(crate) fn deferred_update() -> InteractionResponse {
     InteractionResponse {
         kind: InteractionResponseType::DeferredUpdateMessage,
@@ -159,7 +159,7 @@ pub(crate) fn deferred_update() -> InteractionResponse {
     }
 }
 
-/// Respuesta a un `Ping` de la API.
+/// Reply to an API `Ping`.
 pub(crate) fn pong() -> InteractionResponse {
     InteractionResponse {
         kind: InteractionResponseType::Pong,
@@ -167,7 +167,7 @@ pub(crate) fn pong() -> InteractionResponse {
     }
 }
 
-/// Respuesta vacía a un autocompletado (todavía no soportado).
+/// Empty autocomplete reply (not supported yet).
 pub(crate) fn empty_autocomplete() -> InteractionResponse {
     InteractionResponse {
         kind: InteractionResponseType::ApplicationCommandAutocompleteResult,
@@ -178,7 +178,7 @@ pub(crate) fn empty_autocomplete() -> InteractionResponse {
     }
 }
 
-/// Convierte las opciones de una interacción en un mapa JSON plano.
+/// Flattens interaction options into a JSON map.
 pub(crate) fn option_map(options: &[CommandDataOption]) -> Map<String, Value> {
     let mut map = Map::new();
 
@@ -221,7 +221,7 @@ fn option_value(
     }
 }
 
-/// Extrae los campos de un modal a partir de su JSON.
+/// Extracts modal fields from their JSON.
 pub(crate) fn modal_map(data: &serde_json::Value) -> Map<String, Value> {
     let mut map = Map::new();
     collect_inputs(data, &mut map);
@@ -251,7 +251,7 @@ fn collect_inputs(value: &Value, map: &mut Map<String, Value>) {
     }
 }
 
-/// Divide un `custom_id` en `(nombre, payload)`.
+/// Splits a `custom_id` into `(name, payload)`.
 pub(crate) fn split_custom_id(custom_id: &str) -> (&str, Option<Map<String, Value>>) {
     match custom_id.split_once(':') {
         Some((name, rest)) => (name, serde_json::from_str(rest).ok()),
@@ -266,27 +266,27 @@ mod tests {
 
     static OPTIONS: &[OptionSpec] = &[
         OptionSpec {
-            name: "texto",
-            description: "Qué repetir",
+            name: "text",
+            description: "What to repeat",
             kind: OptionKind::String,
             required: true,
         },
         OptionSpec {
-            name: "veces",
-            description: "Cuántas veces",
+            name: "times",
+            description: "How many times",
             kind: OptionKind::Integer,
             required: false,
         },
     ];
 
     #[test]
-    fn los_comandos_se_serializan_como_los_espera_discord() {
-        let command = Command::new("eco", "Repite un texto").options(OPTIONS);
+    fn commands_serialize_the_way_discord_expects() {
+        let command = Command::new("echo", "Repeats a text").options(OPTIONS);
         let converted = to_commands(std::iter::once(&command));
         let json = serde_json::to_value(&converted[0]).unwrap();
 
-        assert_eq!(json["name"], "eco");
-        assert_eq!(json["description"], "Repite un texto");
+        assert_eq!(json["name"], "echo");
+        assert_eq!(json["description"], "Repeats a text");
         assert_eq!(json["type"], 1);
         assert_eq!(json["options"][0]["type"], 3);
         assert_eq!(json["options"][0]["required"], true);
@@ -295,62 +295,62 @@ mod tests {
     }
 
     #[test]
-    fn los_embeds_se_convierten_al_modelo() {
-        let reply = Reply::text("hola").embed(
+    fn embeds_convert_to_the_model() {
+        let reply = Reply::text("hello").embed(
             FrameworkEmbed::new()
-                .title("Título")
-                .description("Cuerpo")
+                .title("Title")
+                .description("Body")
                 .color(0xF5A623),
         );
 
-        let embeds = to_embeds(&reply).expect("el embed debería ser válido");
+        let embeds = to_embeds(&reply).expect("the embed should be valid");
 
         assert_eq!(embeds.len(), 1);
-        assert_eq!(embeds[0].title.as_deref(), Some("Título"));
+        assert_eq!(embeds[0].title.as_deref(), Some("Title"));
         assert_eq!(embeds[0].color, Some(0xF5A623));
     }
 
     #[test]
-    fn los_botones_se_convierten_al_modelo() {
-        let reply = Reply::text("¿seguro?").components(vec![
+    fn buttons_convert_to_the_model() {
+        let reply = Reply::text("are you sure?").components(vec![
             ActionRow::new()
-                .button(Button::success("confirm:yes", "Sí"))
+                .button(Button::success("confirm:yes", "Yes"))
                 .button(Button::danger("confirm:no", "No")),
         ]);
 
-        let components = to_components(&reply).expect("los botones deberían ser válidos");
+        let components = to_components(&reply).expect("the buttons should be valid");
 
         assert_eq!(components.len(), 1);
     }
 
     #[test]
-    fn los_modales_se_convierten() {
-        let reply = Reply::new().modal(lightning_core::Modal::new("form", "Título").text_input(
-            "nombre",
-            "Nombre",
-            "Tu nombre",
+    fn modals_convert_to_the_model() {
+        let reply = Reply::new().modal(lightning_core::Modal::new("form", "Title").text_input(
+            "name",
+            "Name",
+            "Your name",
         ));
 
         let response =
             interaction_response(InteractionResponseType::ChannelMessageWithSource, &reply)
-                .expect("el modal debería ser válido");
-        let data = response.data.expect("el modal lleva data");
+                .expect("the modal should be valid");
+        let data = response.data.expect("the modal carries data");
 
         assert_eq!(response.kind, InteractionResponseType::Modal);
         assert_eq!(data.custom_id.as_deref(), Some("form"));
-        assert_eq!(data.title.as_deref(), Some("Título"));
+        assert_eq!(data.title.as_deref(), Some("Title"));
         assert_eq!(data.components.unwrap().len(), 1);
     }
 
     #[test]
-    fn divide_custom_ids() {
+    fn splits_custom_ids() {
         let (id, payload) = split_custom_id(r#"confirm:{"choice":"yes"}"#);
 
         assert_eq!(id, "confirm");
         assert_eq!(payload.unwrap()["choice"], "yes");
 
-        let (id, payload) = split_custom_id("cancelar");
-        assert_eq!(id, "cancelar");
+        let (id, payload) = split_custom_id("cancel");
+        assert_eq!(id, "cancel");
         assert!(payload.is_none());
     }
 }

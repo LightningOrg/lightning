@@ -1,4 +1,4 @@
-//! El constructor del bot y el arranque del runtime.
+//! The bot builder and the runtime bootstrap.
 
 use std::sync::Arc;
 
@@ -14,7 +14,7 @@ use twilight_model::id::marker::GuildMarker;
 use crate::events::ComponentHandler;
 use crate::runtime::{Runtime, RuntimeConfig, run_shard};
 
-/// Constructor y punto de entrada de un bot de Lightning.
+/// Builder and entry point for a Lightning bot.
 ///
 /// ```
 /// # use lightning::prelude::*;
@@ -43,7 +43,7 @@ impl Default for Lightning {
 }
 
 impl Lightning {
-    /// Empieza a construir un bot con valores sensatos.
+    /// Starts building a bot with sensible defaults.
     pub fn new() -> Self {
         Self {
             token: None,
@@ -58,93 +58,92 @@ impl Lightning {
         }
     }
 
-    /// Token del bot. Si no se indica, se lee de `DISCORD_TOKEN`.
+    /// Bot token. If omitted, it is read from `DISCORD_TOKEN`.
     pub fn token(mut self, token: impl Into<String>) -> Self {
         self.token = Some(token.into());
         self
     }
 
-    /// Lee el token de la variable de entorno `DISCORD_TOKEN`.
+    /// Reads the token from the `DISCORD_TOKEN` environment variable.
     ///
-    /// Es el comportamiento por defecto; queda explícito para que el código
-    /// se lea solo.
+    /// This is the default behaviour; it is explicit so the code reads itself.
     pub fn token_from_env(self) -> Self {
         self
     }
 
-    /// Intents del Gateway.
+    /// Gateway intents.
     ///
-    /// Si usas comandos de prefijo, Lightning añade `MESSAGE_CONTENT` por ti.
+    /// If you use prefix commands, Lightning adds `MESSAGE_CONTENT` for you.
     pub fn intents(mut self, intents: Intents) -> Self {
         self.intents = intents;
         self
     }
 
-    /// Activa los comandos de prefijo (`!ping`).
+    /// Enables prefix commands (`!ping`).
     pub fn prefix(mut self, prefix: impl Into<String>) -> Self {
         self.prefix = Some(prefix.into());
         self
     }
 
-    /// Inyecta un estado accesible con el extractor `State<T>`.
+    /// Injects state accessible through the `State<T>` extractor.
     pub fn state<T: Send + Sync + 'static>(mut self, value: T) -> Self {
         self.state.insert(value);
         self
     }
 
-    /// Inyecta un estado que ya vive en un `Arc` (útil para bases de datos).
+    /// Injects state that already lives in an `Arc` (useful for databases).
     pub fn state_arc<T: Send + Sync + 'static>(mut self, value: Arc<T>) -> Self {
         self.state.insert_arc(value);
         self
     }
 
-    /// Añade una capa de middleware global.
+    /// Adds a global middleware layer.
     pub fn middleware<M: Middleware>(mut self, layer: M) -> Self {
         self.middleware.push(Arc::new(layer));
         self
     }
 
-    /// Añade un comando escrito a mano (los `#[command]` se auto-registran).
+    /// Adds a hand-written command (`#[command]` items register themselves).
     pub fn command(mut self, command: Command) -> Self {
         self.commands.push(command);
         self
     }
 
-    /// Añade varios comandos.
+    /// Adds several commands.
     pub fn commands(mut self, commands: impl IntoIterator<Item = Command>) -> Self {
         self.commands.extend(commands);
         self
     }
 
-    /// Registra los comandos de barra en un servidor concreto.
+    /// Registers slash commands in a specific guild.
     ///
-    /// Ideal en desarrollo: los cambios aparecen al instante en vez de esperar
-    /// a la caché global de Discord.
+    /// Great for development: changes show up instantly instead of waiting for
+    /// Discord's global cache.
     pub fn guild(mut self, guild_id: impl Into<Id<GuildMarker>>) -> Self {
         self.guild_id = Some(guild_id.into());
         self
     }
 
-    /// Fuerza un número de shards (por defecto, el recomendado por Discord).
+    /// Forces a shard count (defaults to Discord's recommendation).
     pub fn shards(mut self, count: u32) -> Self {
         self.shards = Some(count.max(1));
         self
     }
 
-    /// Desactiva el registro automático de comandos de barra.
+    /// Disables automatic slash command registration.
     pub fn skip_registration(mut self) -> Self {
         self.register = false;
         self
     }
 
-    /// Arranca el bot: registra comandos, abre los shards y procesa eventos
-    /// hasta que pulses `Ctrl+C`.
+    /// Boots the bot: registers commands, opens the shards and processes events
+    /// until you press `Ctrl+C`.
     pub async fn run(self) -> Result<()> {
         let token = self
             .token
             .or_else(|| std::env::var("DISCORD_TOKEN").ok())
             .ok_or_else(|| {
-                Error::custom("falta el token del bot: usa .token(\"...\") o define DISCORD_TOKEN")
+                Error::custom("missing bot token: use .token(\"...\") or set DISCORD_TOKEN")
             })?;
 
         let mut intents = self.intents;
@@ -171,7 +170,7 @@ impl Lightning {
             if seen.insert(command.name) {
                 true
             } else {
-                warn!(command = command.name, "comando duplicado, se ignora");
+                warn!(command = command.name, "duplicate command, skipping");
                 false
             }
         });
@@ -218,8 +217,8 @@ impl Lightning {
         info!(
             bot = %application.name,
             shards = shard_total,
-            prefix = self.prefix.as_deref().unwrap_or("—"),
-            "conectando a Discord"
+            prefix = self.prefix.as_deref().unwrap_or("-"),
+            "connecting to Discord"
         );
 
         let mut tasks: Vec<JoinHandle<()>> = Vec::with_capacity(shard_total as usize);
@@ -237,7 +236,7 @@ impl Lightning {
             .await
             .map_err(|error| Error::Internal(error.to_string()))?;
 
-        info!("apagando Lightning ⚡");
+        info!("shutting down Lightning");
 
         for task in tasks {
             task.abort();
@@ -247,7 +246,7 @@ impl Lightning {
     }
 }
 
-/// Punto de entrada que genera `#[lightning::main]`.
+/// Entry point generated by `#[lightning::main]`.
 #[doc(hidden)]
 pub fn runtime_main<F>(future: F)
 where
@@ -267,7 +266,7 @@ where
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
-        .expect("no se pudo crear el runtime de Tokio");
+        .expect("failed to create the Tokio runtime");
 
     runtime.block_on(future);
 }

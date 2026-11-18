@@ -1,4 +1,4 @@
-//! Implementación de [`Responder`] sobre el cliente HTTP de Twilight.
+//! [`Responder`] implementation on top of Twilight's HTTP client.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -12,25 +12,25 @@ use twilight_model::id::marker::{ApplicationMarker, ChannelMarker, InteractionMa
 
 use crate::convert;
 
-/// A dónde va la respuesta.
+/// Where the reply goes.
 enum Target {
-    /// Interacción (webhook con token).
+    /// Interaction (webhook with a token).
     Interaction {
         id: Id<InteractionMarker>,
         token: String,
     },
-    /// Canal normal, para comandos de prefijo.
+    /// Regular channel, for prefix commands.
     Channel(Id<ChannelMarker>),
 }
 
-/// Qué tipo de mensaje es la respuesta inicial.
+/// What kind of message the initial response is.
 #[derive(Clone, Copy)]
 pub(crate) enum InitialKind {
     Message,
     UpdateMessage,
 }
 
-/// Responde a una invocación concreta.
+/// Replies to one specific invocation.
 pub(crate) struct TwilightResponder {
     http: Arc<Client>,
     application_id: Id<ApplicationMarker>,
@@ -162,7 +162,7 @@ impl Responder for TwilightResponder {
 }
 
 impl TwilightResponder {
-    /// Edita el mensaje original de una interacción (botones y menús).
+    /// Edits the original message of an interaction (buttons and menus).
     async fn update_message(&self, token: &str, reply: &Reply) -> Result<()> {
         let embeds = convert::to_embeds(reply)?;
         let components = convert::to_components(reply)?;

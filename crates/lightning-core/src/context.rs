@@ -1,4 +1,4 @@
-//! El [`Context`]: todo lo que un handler necesita saber de la invocación.
+//! The [`Context`]: everything a handler needs to know about the invocation.
 
 use std::sync::Arc;
 
@@ -14,90 +14,90 @@ use crate::error::{Error, Result};
 use crate::reply::Reply;
 use crate::state::{State, StateMap};
 
-/// Por dónde llegó la invocación.
+/// How the invocation arrived.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Surface {
-    /// Comando de barra (`/ping`).
+    /// Slash command (`/ping`).
     Slash,
-    /// Comando de prefijo (`!ping`).
+    /// Prefix command (`!ping`).
     Prefix,
-    /// Botón o menú (`custom_id`).
+    /// Button or menu (`custom_id`).
     Component,
-    /// Envío de un modal.
+    /// Modal submit.
     Modal,
 }
 
 impl Surface {
-    /// `true` si la invocación vino de una interacción.
+    /// `true` if the invocation came from an interaction.
     pub const fn is_interaction(self) -> bool {
         !matches!(self, Self::Prefix)
     }
 
-    /// `true` si es un comando de barra.
+    /// `true` if it is a slash command.
     pub const fn is_slash(self) -> bool {
         matches!(self, Self::Slash)
     }
 
-    /// `true` si es un comando de prefijo.
+    /// `true` if it is a prefix command.
     pub const fn is_prefix(self) -> bool {
         matches!(self, Self::Prefix)
     }
 }
 
-/// Algo que sabe enviar una respuesta. El runtime lo implementa con HTTP; los
-/// tests lo implementan con un `Vec`.
+/// Something that knows how to send a reply. The runtime implements it with
+/// HTTP; tests implement it with a `Vec`.
 #[crate::async_trait]
 pub trait Responder: Send + Sync + 'static {
-    /// Envía la primera respuesta. Si ya se había hecho `defer`, el runtime
-    /// decide entre editar la respuesta original o mandar un followup.
+    /// Sends the first response. If `defer` already happened, the runtime decides
+    /// between editing the original response or sending a followup.
     async fn respond(&self, reply: Reply) -> Result<()>;
 
-    /// Acusa recibo (para no pasarse del timeout de 3 s de Discord).
+    /// Acknowledges the interaction (staying under Discord's 3 s timeout).
     async fn defer(&self, ephemeral: bool) -> Result<()>;
 
-    /// Envía un mensaje adicional.
+    /// Sends an additional message.
     async fn followup(&self, reply: Reply) -> Result<()>;
 }
 
-/// Estados y servicios internos del runtime (cliente HTTP, app id...).
+/// Runtime state and services (HTTP client, app id…).
 pub type Extras = StateMap;
 
-/// Contexto de una invocación.
+/// Context of an invocation.
 ///
-/// Es barato de clonar (`Arc` por dentro), así que puedes pasarlo a tareas.
+/// It is cheap to clone (`Arc` inside), so you can move it into tasks.
 #[derive(Clone)]
 pub struct Context {
-    /// Nombre del comando que se está ejecutando.
+    /// Name of the command being executed.
     pub command: &'static str,
-    /// Superficie de la invocación.
+    /// Surface of the invocation.
     pub surface: Surface,
-    /// Autor de la invocación.
+    /// Author of the invocation.
     pub user: User,
-    /// Miembro del servidor, si aplica.
+    /// Guild member, when applicable.
     pub member: Option<PartialMember>,
-    /// Servidor, si aplica.
+    /// Guild, when applicable.
     pub guild_id: Option<Id<GuildMarker>>,
-    /// Canal donde se invocó.
+    /// Channel where the command was invoked.
     pub channel_id: Option<Id<ChannelMarker>>,
-    /// Mensaje de origen (componentes) o del comando de prefijo.
+    /// Source message (components) or prefix command message.
     pub message_id: Option<Id<MessageMarker>>,
-    /// Interacción original.
+    /// The raw interaction.
     pub interaction: Option<twilight_model::application::interaction::Interaction>,
-    /// Mensaje original, en comandos de prefijo.
+    /// Source message, for prefix commands.
     pub message: Option<DiscordMessage>,
-    /// Opciones ya normalizadas a JSON (slash, componentes y modales).
+    /// Options already normalized to JSON (slash, components and modals).
     pub options: Option<Map<String, Value>>,
-    /// Tokens de un comando de prefijo.
+    /// Tokens of a prefix command.
     pub tokens: Vec<String>,
-    /// Valores de un menú de selección.
+    /// Values of a select menu.
     pub values: Vec<String>,
-    /// Id del shard que recibió el evento.
+    /// Id of the shard that received the event.
     pub shard_id: u32,
-    /// Canal de salida.
+    /// Output channel.
     pub responder: Arc<dyn Responder>,
-    /// Estados inyectados por el usuario.
+    /// User-injected state.
     pub state: Arc<StateMap>,
-    /// Servicios internos del runtime.
+    /// Runtime-internal services.
     pub extras: Arc<Extras>,
 }
 
@@ -114,54 +114,54 @@ impl std::fmt::Debug for Context {
 }
 
 impl Context {
-    /// Recupera un estado inyectado.
+    /// Retrieves an injected state.
     pub fn try_state<T: Send + Sync + 'static>(&self) -> Option<Arc<T>> {
         self.state.get::<T>()
     }
 
-    /// Recupera un estado inyectado o falla con [`Error::MissingState`].
+    /// Retrieves an injected state or fails with [`Error::MissingState`].
     pub fn state<T: Send + Sync + 'static>(&self) -> Result<Arc<T>> {
         self.try_state::<T>()
             .ok_or(Error::MissingState(std::any::type_name::<T>()))
     }
 
-    /// Recupera un servicio del runtime (por ejemplo el cliente HTTP).
+    /// Retrieves a runtime service (for example the HTTP client).
     pub fn ext<T: Send + Sync + 'static>(&self) -> Option<Arc<T>> {
         self.extras.get::<T>()
     }
 
-    /// Id del servidor o [`Error::GuildOnly`].
+    /// Guild id or [`Error::GuildOnly`].
     pub fn guild_id(&self) -> Result<Id<GuildMarker>> {
         self.guild_id.ok_or(Error::GuildOnly)
     }
 
-    /// Id del canal o [`Error::MissingResource`].
+    /// Channel id or [`Error::MissingResource`].
     pub fn channel_id(&self) -> Result<Id<ChannelMarker>> {
         self.channel_id
-            .ok_or(Error::MissingResource("canal de salida"))
+            .ok_or(Error::MissingResource("output channel"))
     }
 
-    /// `true` si la invocación ocurrió en un servidor.
+    /// `true` if the invocation happened inside a guild.
     pub fn is_guild(&self) -> bool {
         self.guild_id.is_some()
     }
 
-    /// `true` si es una invocación por interacción.
+    /// `true` if this is an interaction invocation.
     pub fn is_interaction(&self) -> bool {
         self.surface.is_interaction()
     }
 
-    /// Responde al usuario.
+    /// Replies to the user.
     pub async fn reply(&self, reply: impl Into<Reply>) -> Result<()> {
         self.responder.respond(reply.into()).await
     }
 
-    /// Acusa recibo de una interacción (no-op en prefijo).
+    /// Acknowledges an interaction (no-op for prefix commands).
     pub async fn defer(&self) -> Result<()> {
         self.defer_ephemeral(false).await
     }
 
-    /// Acusa recibo con respuesta efímera.
+    /// Acknowledges an interaction with an ephemeral reply.
     pub async fn defer_ephemeral(&self, ephemeral: bool) -> Result<()> {
         if self.surface.is_interaction() {
             self.responder.defer(ephemeral).await
@@ -170,12 +170,12 @@ impl Context {
         }
     }
 
-    /// Envía un mensaje extra.
+    /// Sends an extra message.
     pub async fn followup(&self, reply: impl Into<Reply>) -> Result<()> {
         self.responder.followup(reply.into()).await
     }
 
-    /// Crea un contexto de prueba con un responder falso.
+    /// Creates a test context with a fake responder.
     ///
     /// ```
     /// use lightning_core::Context;
@@ -237,10 +237,10 @@ fn test_user() -> User {
     }
 }
 
-/// Extrae un valor del [`Context`]. Es el equivalente a los *extractors* de axum.
+/// Extracts a value from the [`Context`]. The axum *extractor* equivalent.
 #[crate::async_trait]
 pub trait FromContext<'a>: Sized {
-    /// Construye el valor a partir del contexto.
+    /// Builds the value from the context.
     async fn from_context(ctx: &'a Context) -> Result<Self>;
 }
 
@@ -275,7 +275,7 @@ where
     }
 }
 
-/// Extractor del servidor actual.
+/// Extractor for the current guild.
 #[derive(Debug, Clone, Copy)]
 pub struct Guild(pub Id<GuildMarker>);
 
@@ -286,7 +286,7 @@ impl<'a> FromContext<'a> for Guild {
     }
 }
 
-/// Extractor del miembro que invocó el comando.
+/// Extractor for the member who invoked the command.
 #[derive(Debug, Clone)]
 pub struct Member(pub PartialMember);
 
@@ -296,11 +296,11 @@ impl<'a> FromContext<'a> for Member {
         ctx.member
             .clone()
             .map(Member)
-            .ok_or(Error::MissingResource("miembro"))
+            .ok_or(Error::MissingResource("member"))
     }
 }
 
-/// Extractor del autor.
+/// Extractor for the author.
 #[derive(Debug, Clone)]
 pub struct Author(pub User);
 
@@ -311,7 +311,7 @@ impl<'a> FromContext<'a> for Author {
     }
 }
 
-/// Extractor del canal.
+/// Extractor for the channel.
 #[derive(Debug, Clone, Copy)]
 pub struct ChannelId(pub Id<ChannelMarker>);
 
@@ -322,7 +322,7 @@ impl<'a> FromContext<'a> for ChannelId {
     }
 }
 
-/// Extractor del mensaje de origen.
+/// Extractor for the source message.
 #[derive(Debug, Clone)]
 pub struct Message(pub DiscordMessage);
 
@@ -332,11 +332,11 @@ impl<'a> FromContext<'a> for Message {
         ctx.message
             .clone()
             .map(Message)
-            .ok_or(Error::MissingResource("mensaje"))
+            .ok_or(Error::MissingResource("message"))
     }
 }
 
-/// Extractor de la interacción original.
+/// Extractor for the raw interaction.
 #[derive(Debug, Clone)]
 pub struct Interaction(pub twilight_model::application::interaction::Interaction);
 
@@ -346,11 +346,11 @@ impl<'a> FromContext<'a> for Interaction {
         ctx.interaction
             .clone()
             .map(Interaction)
-            .ok_or(Error::MissingResource("interacción"))
+            .ok_or(Error::MissingResource("interaction"))
     }
 }
 
-/// Extractor de los valores de un menú de selección.
+/// Extractor for select menu values.
 #[derive(Debug, Clone)]
 pub struct Values(pub Vec<String>);
 
@@ -361,7 +361,7 @@ impl<'a> FromContext<'a> for Values {
     }
 }
 
-/// Extractor del id del usuario.
+/// Extractor for the user id.
 #[derive(Debug, Clone, Copy)]
 pub struct UserId(pub Id<UserMarker>);
 

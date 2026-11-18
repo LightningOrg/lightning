@@ -1,4 +1,4 @@
-//! Tests de integración del framework: macros, argumentos, estado y middleware.
+//! Framework integration tests: macros, arguments, state and middleware.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -7,11 +7,11 @@ use lightning::prelude::*;
 use lightning::testing::mock_context;
 
 #[derive(CommandArgs, Debug, PartialEq)]
-struct Eco {
-    /// Qué repetir
-    texto: String,
-    /// Cuántas veces
-    veces: Option<u8>,
+struct Echo {
+    /// What to repeat
+    text: String,
+    /// How many times
+    times: Option<u8>,
 }
 
 #[command]
@@ -20,9 +20,9 @@ async fn ping(ctx: Context) -> Reply {
 }
 
 #[command]
-async fn eco(args: Args<Eco>) -> Reply {
-    let veces = args.veces.unwrap_or(1);
-    Reply::text(args.texto.repeat(veces as usize))
+async fn echo(args: Args<Echo>) -> Reply {
+    let times = args.times.unwrap_or(1);
+    Reply::text(args.text.repeat(times as usize))
 }
 
 fn ok_handler<'a>(_ctx: &'a Context) -> lightning::BoxFuture<'a, Result<Reply>> {
@@ -30,69 +30,71 @@ fn ok_handler<'a>(_ctx: &'a Context) -> lightning::BoxFuture<'a, Result<Reply>> 
 }
 
 #[test]
-fn las_opciones_se_generan_desde_la_struct() {
-    let options = <Eco as CommandArgs>::OPTIONS;
+fn options_are_generated_from_the_struct() {
+    let options = <Echo as CommandArgs>::OPTIONS;
 
     assert_eq!(options.len(), 2);
-    assert_eq!(options[0].name, "texto");
+    assert_eq!(options[0].name, "text");
     assert!(options[0].required);
     assert_eq!(options[0].kind, OptionKind::String);
-    assert_eq!(options[1].name, "veces");
+    assert_eq!(options[1].name, "times");
     assert!(!options[1].required);
     assert_eq!(options[1].kind, OptionKind::Integer);
 }
 
 #[test]
-fn las_descripciones_salen_del_doc_comment() {
-    let options = <Eco as CommandArgs>::OPTIONS;
-    assert_eq!(options[0].description, "Qué repetir");
+fn descriptions_come_from_doc_comments() {
+    let options = <Echo as CommandArgs>::OPTIONS;
+    assert_eq!(options[0].description, "What to repeat");
 }
 
 #[test]
-fn parseo_de_prefijo_posicional() {
-    let args = <Eco as CommandArgs>::from_prefix(&["hola".to_owned(), "3".to_owned()]).unwrap();
+fn prefix_parsing_is_positional() {
+    let args = <Echo as CommandArgs>::from_prefix(&["hello".to_owned(), "3".to_owned()]).unwrap();
 
-    assert_eq!(args.texto, "hola");
-    assert_eq!(args.veces, Some(3));
+    assert_eq!(args.text, "hello");
+    assert_eq!(args.times, Some(3));
 }
 
 #[test]
-fn parseo_de_prefijo_sin_opcionales() {
-    let args = <Eco as CommandArgs>::from_prefix(&["hola".to_owned()]).unwrap();
+fn prefix_parsing_without_optional_fields() {
+    let args = <Echo as CommandArgs>::from_prefix(&["hello".to_owned()]).unwrap();
 
-    assert_eq!(args.texto, "hola");
-    assert_eq!(args.veces, None);
+    assert_eq!(args.text, "hello");
+    assert_eq!(args.times, None);
 }
 
 #[test]
-fn parseo_de_prefijo_detecta_faltantes() {
-    let error = <Eco as CommandArgs>::from_prefix(&[]).unwrap_err();
-    assert!(error.to_string().contains("texto"));
+fn prefix_parsing_detects_missing_arguments() {
+    let error = <Echo as CommandArgs>::from_prefix(&[]).unwrap_err();
+    assert!(error.to_string().contains("text"));
 }
 
 #[test]
-fn parseo_de_opciones_de_discord() {
+fn discord_options_are_parsed() {
     let mut options = lightning::serde_json::Map::new();
-    options.insert("texto".into(), lightning::serde_json::json!("hey"));
-    options.insert("veces".into(), lightning::serde_json::json!(2));
+    options.insert("text".into(), lightning::serde_json::json!("hey"));
+    options.insert("times".into(), lightning::serde_json::json!(2));
 
-    let args = <Eco as CommandArgs>::from_options(options).unwrap();
+    let args = <Echo as CommandArgs>::from_options(options).unwrap();
 
-    assert_eq!(args.texto, "hey");
-    assert_eq!(args.veces, Some(2));
+    assert_eq!(args.text, "hey");
+    assert_eq!(args.times, Some(2));
 }
 
 #[tokio::test]
-async fn el_comando_se_encuentra_en_el_registro() {
+async fn the_command_is_found_in_the_registry() {
     let command = lightning::inventory::iter::<Command>
         .into_iter()
         .find(|command| command.name == "ping")
-        .expect("el comando ping debería estar registrado");
+        .expect("the ping command should be registered");
 
     assert_eq!(command.kind, CommandKind::Both);
 
     let (ctx, responder) = mock_context("ping");
-    let reply = (command.run().expect("tiene handler"))(&ctx).await.unwrap();
+    let reply = (command.run().expect("it has a handler"))(&ctx)
+        .await
+        .unwrap();
 
     ctx.reply(reply).await.unwrap();
 
@@ -103,11 +105,11 @@ async fn el_comando_se_encuentra_en_el_registro() {
 }
 
 #[tokio::test]
-async fn el_cooldown_bloquea_la_segunda_llamada() {
+async fn cooldown_blocks_the_second_call() {
     let cooldown: Arc<dyn Middleware> = Arc::new(Cooldown::per_user(Duration::from_secs(60)));
     let layers = [cooldown];
 
-    let (ctx, _) = mock_context("eco");
+    let (ctx, _) = mock_context("echo");
 
     let first = lightning::run_pipeline(&layers, &[], ok_handler, ctx.clone()).await;
     assert!(first.is_ok());
@@ -116,18 +118,18 @@ async fn el_cooldown_bloquea_la_segunda_llamada() {
     assert!(matches!(second, Err(Error::Cooldown { .. })));
 }
 
-struct Bloqueado;
+struct Blocked;
 
 #[lightning::async_trait]
-impl Middleware for Bloqueado {
+impl Middleware for Blocked {
     async fn handle(&self, _ctx: Context, _next: Next) -> Result<Reply> {
         Err(Error::Forbidden)
     }
 }
 
 #[tokio::test]
-async fn un_middleware_puede_cortar_la_cadena() {
-    let layer: Arc<dyn Middleware> = Arc::new(Bloqueado);
+async fn middleware_can_cut_the_chain() {
+    let layer: Arc<dyn Middleware> = Arc::new(Blocked);
     let (ctx, _) = mock_context("ping");
 
     let result = lightning::run_pipeline(&[layer], &[], ok_handler, ctx).await;

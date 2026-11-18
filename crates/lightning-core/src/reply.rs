@@ -1,16 +1,16 @@
-//! Construcción de respuestas: mensajes, embeds, botones y modales.
+//! Building replies: messages, embeds, buttons and modals.
 //!
-//! `Reply` es el tipo que devuelven los handlers. Es deliberadamente *builder*:
+//! `Reply` is what handlers return. It is deliberately *builder*-shaped:
 //!
 //! ```
 //! use lightning_core::{Button, Embed, Reply};
 //!
-//! let reply = Reply::text("¿Seguro?")
-//!     .embed(Embed::new().title("Confirmación").color(0xF5A623))
+//! let reply = Reply::text("Are you sure?")
+//!     .embed(Embed::new().title("Confirmation").color(0xF5A623))
 //!     .components(vec![
 //!         lightning_core::ActionRow::new()
-//!             .button(Button::danger("confirm:no", "Cancelar"))
-//!             .button(Button::success("confirm:yes", "Vamos")),
+//!             .button(Button::danger("confirm:no", "Cancel"))
+//!             .button(Button::success("confirm:yes", "Let's go")),
 //!     ]);
 //!
 //! assert_eq!(reply.embeds.len(), 1);
@@ -18,18 +18,18 @@
 
 use serde_json::{Map, Value, json};
 
-/// Estilo visual de un botón, según la API de Discord.
+/// Visual style of a button, following the Discord API.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ButtonStyle {
-    /// Azul (`blurple`).
+    /// Blue (`blurple`).
     Primary,
-    /// Gris.
+    /// Grey.
     Secondary,
-    /// Verde.
+    /// Green.
     Success,
-    /// Rojo.
+    /// Red.
     Danger,
-    /// Enlace externo (no envía interacción).
+    /// External link (does not send an interaction).
     Link,
 }
 
@@ -45,14 +45,14 @@ impl ButtonStyle {
     }
 }
 
-/// Un botón dentro de una [`ActionRow`].
+/// A button inside an [`ActionRow`].
 #[derive(Debug, Clone)]
 pub struct Button {
     value: Map<String, Value>,
 }
 
 impl Button {
-    /// Crea un botón con estilo y `custom_id`.
+    /// Creates a button with a style and a `custom_id`.
     pub fn new(style: ButtonStyle, custom_id: impl Into<String>, label: impl Into<String>) -> Self {
         let mut value = Map::new();
         value.insert("type".into(), json!(2));
@@ -63,27 +63,27 @@ impl Button {
         Self { value }
     }
 
-    /// Botón azul.
+    /// Blue button.
     pub fn primary(custom_id: impl Into<String>, label: impl Into<String>) -> Self {
         Self::new(ButtonStyle::Primary, custom_id, label)
     }
 
-    /// Botón gris.
+    /// Grey button.
     pub fn secondary(custom_id: impl Into<String>, label: impl Into<String>) -> Self {
         Self::new(ButtonStyle::Secondary, custom_id, label)
     }
 
-    /// Botón verde.
+    /// Green button.
     pub fn success(custom_id: impl Into<String>, label: impl Into<String>) -> Self {
         Self::new(ButtonStyle::Success, custom_id, label)
     }
 
-    /// Botón rojo.
+    /// Red button.
     pub fn danger(custom_id: impl Into<String>, label: impl Into<String>) -> Self {
         Self::new(ButtonStyle::Danger, custom_id, label)
     }
 
-    /// Botón de enlace: abre una URL en el navegador.
+    /// Link button: opens a URL in the browser.
     pub fn link(url: impl Into<String>, label: impl Into<String>) -> Self {
         let mut button = Self::new(ButtonStyle::Link, String::new(), label);
         button.value.remove("custom_id");
@@ -91,92 +91,92 @@ impl Button {
         button
     }
 
-    /// Deshabilita el botón.
+    /// Disables the button.
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.value.insert("disabled".into(), json!(disabled));
         self
     }
 
-    /// Añade un emoji (unicode o `nombre:id`).
+    /// Adds an emoji (unicode or `name:id`).
     pub fn emoji(mut self, emoji: impl Into<String>) -> Self {
         self.value
             .insert("emoji".into(), json!({ "name": emoji.into() }));
         self
     }
 
-    /// Representación JSON lista para la API.
+    /// JSON representation ready for the API.
     pub fn to_value(self) -> Value {
         Value::Object(self.value)
     }
 }
 
-/// Fila de componentes (botones o inputs).
+/// Row of components (buttons or inputs).
 #[derive(Debug, Clone, Default)]
 pub struct ActionRow {
     components: Vec<Value>,
 }
 
 impl ActionRow {
-    /// Fila vacía.
+    /// Empty row.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Añade cualquier componente que sepa serializarse.
+    /// Adds any component that can be serialized.
     pub fn component(mut self, component: impl Into<Value>) -> Self {
         self.components.push(component.into());
         self
     }
 
-    /// Añade un botón.
+    /// Adds a button.
     pub fn button(self, button: Button) -> Self {
         self.component(button.to_value())
     }
 
-    /// Convierte la fila en JSON.
+    /// Turns the row into JSON.
     pub fn to_value(self) -> Value {
         json!({ "type": 1, "components": self.components })
     }
 }
 
-/// Embed de Discord con una API fluida.
+/// Discord embed with a fluent API.
 #[derive(Debug, Clone, Default)]
 pub struct Embed {
     value: Map<String, Value>,
 }
 
 impl Embed {
-    /// Embed vacío (Discord exige al menos un campo para mostrarlo).
+    /// Empty embed (Discord needs at least one field to display it).
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Título del embed.
+    /// Embed title.
     pub fn title(mut self, title: impl Into<String>) -> Self {
         self.value.insert("title".into(), json!(title.into()));
         self
     }
 
-    /// Descripción (markdown permitido).
+    /// Description (markdown allowed).
     pub fn description(mut self, description: impl Into<String>) -> Self {
         self.value
             .insert("description".into(), json!(description.into()));
         self
     }
 
-    /// Color en formato `0xRRGGBB`.
+    /// Color in `0xRRGGBB` format.
     pub fn color(mut self, color: u32) -> Self {
         self.value.insert("color".into(), json!(color));
         self
     }
 
-    /// URL del título.
+    /// Title URL.
     pub fn url(mut self, url: impl Into<String>) -> Self {
         self.value.insert("url".into(), json!(url.into()));
         self
     }
 
-    /// Añade un campo.
+    /// Adds a field.
     pub fn field(
         mut self,
         name: impl Into<String>,
@@ -193,48 +193,48 @@ impl Embed {
             .entry("fields")
             .or_insert_with(|| Value::Array(Vec::new()))
             .as_array_mut()
-            .expect("fields siempre es un array")
+            .expect("fields is always an array")
             .push(field);
 
         self
     }
 
-    /// Pie del embed.
+    /// Embed footer.
     pub fn footer(mut self, text: impl Into<String>) -> Self {
         self.value
             .insert("footer".into(), json!({ "text": text.into() }));
         self
     }
 
-    /// Autor del embed.
+    /// Embed author.
     pub fn author(mut self, name: impl Into<String>) -> Self {
         self.value
             .insert("author".into(), json!({ "name": name.into() }));
         self
     }
 
-    /// Imagen principal.
+    /// Main image.
     pub fn image(mut self, url: impl Into<String>) -> Self {
         self.value
             .insert("image".into(), json!({ "url": url.into() }));
         self
     }
 
-    /// Miniatura (esquina superior derecha).
+    /// Thumbnail (top-right corner).
     pub fn thumbnail(mut self, url: impl Into<String>) -> Self {
         self.value
             .insert("thumbnail".into(), json!({ "url": url.into() }));
         self
     }
 
-    /// Timestamp ISO-8601.
+    /// ISO-8601 timestamp.
     pub fn timestamp(mut self, timestamp: impl Into<String>) -> Self {
         self.value
             .insert("timestamp".into(), json!(timestamp.into()));
         self
     }
 
-    /// Representación JSON lista para la API.
+    /// JSON representation ready for the API.
     pub fn to_value(self) -> Value {
         let mut value = self.value;
         value
@@ -244,7 +244,7 @@ impl Embed {
     }
 }
 
-/// Modal (formulario emergente) que se responde a una interacción.
+/// Modal (popup form) sent in response to an interaction.
 #[derive(Debug, Clone)]
 pub struct Modal {
     custom_id: String,
@@ -253,7 +253,7 @@ pub struct Modal {
 }
 
 impl Modal {
-    /// Crea un modal con su `custom_id` y título.
+    /// Creates a modal with its `custom_id` and title.
     pub fn new(custom_id: impl Into<String>, title: impl Into<String>) -> Self {
         Self {
             custom_id: custom_id.into(),
@@ -262,7 +262,7 @@ impl Modal {
         }
     }
 
-    /// Añade un campo de texto obligatorio.
+    /// Adds a required text input.
     pub fn text_input(
         mut self,
         custom_id: impl Into<String>,
@@ -283,17 +283,17 @@ impl Modal {
         self
     }
 
-    /// `custom_id` del modal.
+    /// Modal `custom_id`.
     pub fn custom_id(&self) -> &str {
         &self.custom_id
     }
 
-    /// Título del modal.
+    /// Modal title.
     pub fn title(&self) -> &str {
         &self.title
     }
 
-    /// JSON con `custom_id`, `title` y `components`.
+    /// JSON with `custom_id`, `title` and `components`.
     pub fn to_value(&self) -> Value {
         json!({
             "custom_id": self.custom_id,
@@ -302,40 +302,40 @@ impl Modal {
         })
     }
 
-    /// Solo las filas de componentes (lo que espera `InteractionResponseData`).
+    /// Only the component rows (what `InteractionResponseData` expects).
     pub fn components(&self) -> Value {
         Value::Array(self.components.clone())
     }
 }
 
-/// Respuesta de un handler.
+/// Handler response.
 ///
-/// Un `Reply` vacío significa "no envíes nada" (útil después de un `defer`).
+/// An empty `Reply` means "send nothing" (useful after a `defer`).
 #[derive(Debug, Clone, Default)]
 pub struct Reply {
-    /// Texto del mensaje.
+    /// Message text.
     pub content: Option<String>,
-    /// Embeds ya serializados.
+    /// Embeds, already serialized.
     pub embeds: Vec<Value>,
-    /// Filas de componentes ya serializadas.
+    /// Component rows, already serialized.
     pub components: Vec<Value>,
-    /// Menciones permitidas (JSON de `AllowedMentions`).
+    /// Allowed mentions (`AllowedMentions` JSON).
     pub allowed_mentions: Option<Value>,
-    /// Si la respuesta solo la ve quien invocó el comando.
+    /// Whether only the invoker sees the reply.
     pub ephemeral: bool,
-    /// Si el mensaje se lee por TTS.
+    /// Whether the message is read aloud by TTS.
     pub tts: bool,
-    /// Si está presente, se responde con un modal (solo interacciones).
+    /// When present, the interaction is answered with a modal.
     pub modal: Option<Modal>,
 }
 
 impl Reply {
-    /// Respuesta vacía.
+    /// Empty reply.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Mensaje de texto.
+    /// Text message.
     pub fn text(content: impl Into<String>) -> Self {
         Self {
             content: Some(content.into()),
@@ -343,50 +343,50 @@ impl Reply {
         }
     }
 
-    /// Añade un embed.
+    /// Adds an embed.
     pub fn embed(mut self, embed: Embed) -> Self {
         self.embeds.push(embed.to_value());
         self
     }
 
-    /// Añade varias filas de componentes.
+    /// Adds several component rows.
     pub fn components(mut self, rows: Vec<ActionRow>) -> Self {
         self.components
             .extend(rows.into_iter().map(ActionRow::to_value));
         self
     }
 
-    /// Añade un JSON de componente en crudo (escape hatch).
+    /// Adds raw component JSON (escape hatch).
     pub fn raw_component(mut self, component: Value) -> Self {
         self.components.push(component);
         self
     }
 
-    /// Marca la respuesta como efímera.
+    /// Marks the reply as ephemeral.
     pub fn ephemeral(mut self) -> Self {
         self.ephemeral = true;
         self
     }
 
-    /// Menciones permitidas en crudo (JSON).
+    /// Raw allowed mentions (JSON).
     pub fn allowed_mentions(mut self, allowed: Value) -> Self {
         self.allowed_mentions = Some(allowed);
         self
     }
 
-    /// No permitir ninguna mención.
+    /// Disallow every mention.
     pub fn no_mentions(mut self) -> Self {
         self.allowed_mentions = Some(json!({ "parse": [] }));
         self
     }
 
-    /// Responde con un modal.
+    /// Replies with a modal.
     pub fn modal(mut self, modal: Modal) -> Self {
         self.modal = Some(modal);
         self
     }
 
-    /// `true` si no hay nada que enviar.
+    /// `true` if there is nothing to send.
     pub fn is_empty(&self) -> bool {
         self.content.is_none()
             && self.embeds.is_empty()
@@ -394,7 +394,7 @@ impl Reply {
             && self.modal.is_none()
     }
 
-    /// Construye el objeto `data` que espera la API.
+    /// Builds the `data` object expected by the API.
     pub fn data(&self) -> Map<String, Value> {
         let mut data = Map::new();
 
@@ -452,9 +452,9 @@ impl From<()> for Reply {
     }
 }
 
-/// Resultado que puede devolver un handler.
+/// Result a handler can return.
 pub trait IntoReply {
-    /// Convierte el valor en una respuesta.
+    /// Converts the value into a reply.
     fn into_reply(self) -> crate::Result<Reply>;
 }
 

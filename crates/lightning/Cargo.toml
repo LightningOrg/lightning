@@ -1,6 +1,6 @@
 [package]
 name = "lightning"
-description = "⚡ Framework de Rust para crear bots de Discord: rápido, tipado y sin boilerplate."
+description = "A Rust framework for building Discord bots: fast, typed and boilerplate-free."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -1,6 +1,6 @@
 [package]
 name = "lightning-macros"
-description = "Macros de ⚡ Lightning: #[command], #[event], #[component], #[main] y derive(CommandArgs)."
+description = "Lightning macros: #[command], #[event], #[component], #[main] and derive(CommandArgs)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

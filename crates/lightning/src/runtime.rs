@@ -1,4 +1,4 @@
-//! El motor: registro, shards, despacho de eventos y ejecución de comandos.
+//! The engine: registration, shards, event dispatch and command execution.
 
 use std::sync::Arc;
 
@@ -23,13 +23,13 @@ use crate::convert;
 use crate::events::{ComponentHandler, EventContext, EventHandler};
 use crate::responder::{InitialKind, TwilightResponder};
 
-/// Un comando más sus capas de middleware ya construidas.
+/// A command plus its already-built middleware layers.
 pub(crate) struct CommandSlot {
     command: Command,
     layers: Arc<[Arc<dyn Middleware>]>,
 }
 
-/// Estado compartido por todos los shards.
+/// State shared by every shard.
 pub(crate) struct Runtime {
     pub http: Arc<Client>,
     pub application_id: Id<ApplicationMarker>,
@@ -41,7 +41,7 @@ pub(crate) struct Runtime {
     pub shard_total: u32,
 }
 
-/// Todo lo necesario para construir el runtime.
+/// Everything needed to build the runtime.
 pub(crate) struct RuntimeConfig {
     pub application_id: Id<ApplicationMarker>,
     pub commands: Vec<Command>,
@@ -84,12 +84,12 @@ impl Runtime {
         }
     }
 
-    /// Publica los comandos de barra en Discord.
+    /// Publishes the slash commands to Discord.
     pub(crate) async fn register(&self, guild_id: Option<Id<GuildMarker>>) -> Result<()> {
         let commands = convert::to_commands(self.commands.iter().map(|slot| &slot.command));
 
         if commands.is_empty() {
-            info!("no hay comandos de barra que registrar");
+            info!("there are no slash commands to register");
             return Ok(());
         }
 
@@ -103,20 +103,20 @@ impl Runtime {
             info!(
                 count = commands.len(),
                 guild = %guild_id,
-                "comandos registrados en el servidor"
+                "commands registered in guild"
             );
         } else {
             interaction
                 .set_global_commands(&commands)
                 .await
                 .map_err(|error| Error::Transport(error.to_string()))?;
-            info!(count = commands.len(), "comandos globales registrados");
+            info!(count = commands.len(), "global commands registered");
         }
 
         Ok(())
     }
 
-    /// Procesa un evento del Gateway.
+    /// Processes a Gateway event.
     pub(crate) async fn dispatch(self: &Arc<Self>, event: Event, shard_id: u32) {
         match &event {
             Event::InteractionCreate(created) => {
@@ -153,7 +153,7 @@ impl Runtime {
         }
 
         println!(
-            "\n  ⚡ Lightning v{}\n  ─────────────────────────────────────\n  Bot         {}\n  Servidores  {}\n  Comandos    {}\n  Shards      {}\n",
+            "\n  Lightning v{}\n  ─────────────────────────────────────\n  Bot         {}\n  Servers     {}\n  Commands    {}\n  Shards      {}\n",
             env!("CARGO_PKG_VERSION"),
             bot,
             guilds,
@@ -163,7 +163,7 @@ impl Runtime {
     }
 
     // -----------------------------------------------------------------------
-    // Interacciones
+    // Interactions
     // -----------------------------------------------------------------------
 
     async fn handle_interaction(self: Arc<Self>, interaction: Interaction, shard_id: u32) {
@@ -173,7 +173,7 @@ impl Runtime {
         }
 
         if interaction.kind == InteractionType::ApplicationCommandAutocomplete {
-            debug!("autocompletado sin soporte todavía: se responde vacío");
+            debug!("autocomplete not supported yet: replying with an empty list");
             self.respond_raw(&interaction, convert::empty_autocomplete())
                 .await;
             return;
@@ -197,7 +197,7 @@ impl Runtime {
         }
     }
 
-    /// Envía una respuesta de bajo nivel (ping, autocompletado...).
+    /// Sends a low-level response (ping, autocomplete…).
     async fn respond_raw(
         &self,
         interaction: &Interaction,
@@ -209,7 +209,7 @@ impl Runtime {
             .create_response(interaction.id, &interaction.token, &response)
             .await
         {
-            warn!(%error, "no se pudo responder a la interacción");
+            warn!(%error, "could not respond to the interaction");
         }
     }
 
@@ -220,9 +220,12 @@ impl Runtime {
             .find(|slot| slot.command.matches(&data.name) && slot.command.kind.allows(true));
 
         let Some(slot) = slot else {
-            warn!(command = %data.name, "comando de barra desconocido");
-            self.reject(&interaction, "ese comando no existe (¿reiniciaste el bot?)")
-                .await;
+            warn!(command = %data.name, "unknown slash command");
+            self.reject(
+                &interaction,
+                "that command does not exist (did you restart the bot?)",
+            )
+            .await;
             return;
         };
 
@@ -249,7 +252,7 @@ impl Runtime {
         let (id, payload) = convert::split_custom_id(&data.custom_id);
 
         let Some(handler) = self.components.iter().find(|handler| handler.id == id) else {
-            warn!(custom_id = %data.custom_id, "componente sin handler");
+            warn!(custom_id = %data.custom_id, "component without a handler");
             return;
         };
 
@@ -274,7 +277,7 @@ impl Runtime {
         let (id, _) = convert::split_custom_id(&data.custom_id);
 
         let Some(handler) = self.components.iter().find(|handler| handler.id == id) else {
-            warn!(custom_id = %data.custom_id, "modal sin handler");
+            warn!(custom_id = %data.custom_id, "modal without a handler");
             return;
         };
 
@@ -376,12 +379,12 @@ impl Runtime {
         };
 
         if let Err(error) = context.reply(Reply::text(message).ephemeral()).await {
-            warn!(%error, "no se pudo rechazar la interacción");
+            warn!(%error, "could not reject the interaction");
         }
     }
 
     // -----------------------------------------------------------------------
-    // Comandos de prefijo
+    // Prefix commands
     // -----------------------------------------------------------------------
 
     async fn handle_message(self: Arc<Self>, message: Message, _shard_id: u32) {
@@ -406,7 +409,7 @@ impl Runtime {
             .find(|slot| slot.command.matches(name) && slot.command.kind.allows(false));
 
         let Some(slot) = slot else {
-            debug!(%name, "comando de prefijo desconocido");
+            debug!(%name, "unknown prefix command");
             return;
         };
 
@@ -439,7 +442,7 @@ impl Runtime {
     }
 
     // -----------------------------------------------------------------------
-    // Ejecución
+    // Execution
     // -----------------------------------------------------------------------
 
     async fn execute(self: &Arc<Self>, slot: &CommandSlot, ctx: Context) {
@@ -449,7 +452,7 @@ impl Runtime {
         }
 
         let Some(run) = slot.command.run() else {
-            warn!(command = %slot.command.name, "el comando no tiene handler");
+            warn!(command = %slot.command.name, "the command has no handler");
             return;
         };
 
@@ -463,7 +466,7 @@ impl Runtime {
         let reply = match reply {
             Ok(reply) => reply,
             Err(error) => {
-                warn!(command = %ctx.command, %error, "el handler ha fallado");
+                warn!(command = %ctx.command, %error, "the handler failed");
                 error.to_reply()
             }
         };
@@ -473,7 +476,7 @@ impl Runtime {
         }
 
         if let Err(error) = ctx.reply(reply).await {
-            warn!(%error, "no se pudo enviar la respuesta");
+            warn!(%error, "could not send the reply");
         }
     }
 
@@ -484,7 +487,7 @@ impl Runtime {
     }
 }
 
-/// Arranca un shard y no vuelve hasta que se cierra la conexión.
+/// Starts a shard and does not return until the connection closes.
 pub(crate) async fn run_shard(
     runtime: Arc<Runtime>,
     token: String,
@@ -502,15 +505,15 @@ pub(crate) async fn run_shard(
         match item {
             Ok(event) => runtime.dispatch(event, shard_id).await,
             Err(error) => {
-                warn!(shard = shard_id, %error, "error recibiendo evento");
+                warn!(shard = shard_id, %error, "error receiving event");
             }
         }
     }
 
-    info!(shard = shard_id, "shard desconectado");
+    info!(shard = shard_id, "shard disconnected");
 }
 
-/// Divide el texto respetando comillas dobles: `!eco "hola mundo"` → `eco`, `hola mundo`.
+/// Splits text while respecting double quotes: `!echo "hello world"` → `echo`, `hello world`.
 pub(crate) fn tokenize(input: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     let mut current = String::new();
@@ -540,9 +543,12 @@ mod tests {
     use super::tokenize;
 
     #[test]
-    fn tokeniza_respetando_comillas() {
-        assert_eq!(tokenize("eco hola mundo"), vec!["eco", "hola", "mundo"]);
-        assert_eq!(tokenize(r#"eco "hola mundo""#), vec!["eco", "hola mundo"]);
+    fn tokenizes_while_respecting_quotes() {
+        assert_eq!(tokenize("echo hello world"), vec!["echo", "hello", "world"]);
+        assert_eq!(
+            tokenize(r#"echo "hello world""#),
+            vec!["echo", "hello world"]
+        );
         assert_eq!(tokenize(r#"  "a b"  c  "#), vec!["a b", "c"]);
     }
 }

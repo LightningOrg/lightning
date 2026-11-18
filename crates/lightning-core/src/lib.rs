@@ -1,21 +1,21 @@
-//! # ⚡ lightning-core
+//! # lightning-core
 //!
-//! El núcleo de **Lightning**, un framework de Rust para construir bots de
-//! Discord con la velocidad del rayo.
+//! The core of **Lightning**, a Rust framework for building Discord bots at
+//! lightning speed.
 //!
-//! Esta crate no habla con la red: define el modelo de comandos, el contexto de
-//! ejecución, los extractores tipados, la pila de middleware y el formato de
-//! respuesta. El runtime real (Gateway + HTTP) vive en la crate `lightning`.
+//! This crate does not talk to the network: it defines the command model, the
+//! execution context, the typed extractors, the middleware stack and the reply
+//! format. The actual runtime (Gateway + HTTP) lives in the `lightning` crate.
 //!
-//! La gracia de separar el núcleo es que **el envío de mensajes es un trait**
-//! ([`Responder`]): puedes ejecutar tus handlers contra un responder falso y
-//! testear tu bot sin tocar Discord.
+//! The point of separating the core is that **sending messages is a trait**
+//! ([`Responder`]): you can run your handlers against a fake responder and test
+//! your bot without touching Discord.
 //!
 //! ```
 //! use lightning_core::Reply;
 //!
-//! let reply = Reply::text("⚡ pong!").ephemeral();
-//! assert_eq!(reply.content.as_deref(), Some("⚡ pong!"));
+//! let reply = Reply::text("pong!").ephemeral();
+//! assert_eq!(reply.content.as_deref(), Some("pong!"));
 //! ```
 
 #![warn(missing_docs)]
@@ -42,16 +42,16 @@ pub use middleware::{Cooldown, DmOnly, GuildOnly, Middleware, Next, run_pipeline
 pub use reply::{ActionRow, Button, ButtonStyle, Embed, IntoReply, Modal, Reply};
 pub use state::{State, StateMap};
 
-/// Un futuro dinámico y `Send`, el pegamento entre handlers y runtime.
+/// A dynamic, `Send` future: the glue between handlers and the runtime.
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
-/// Re-exportado para que las macros generen código sin depender del crate.
+/// Re-exported so the macros can generate code without depending on the crate.
 pub use async_trait::async_trait;
 pub use inventory;
 pub use serde_json;
 pub use twilight_model;
 
-/// Tipos que necesitan las macros y el runtime. No forma parte de la API estable.
+/// Types the macros and the runtime need. Not part of the stable API.
 #[doc(hidden)]
 pub mod __private {
     pub use crate::{Error, Result};

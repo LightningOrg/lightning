@@ -1,13 +1,13 @@
-//! Middleware estilo *tower*: capas que envuelven la ejecución de un comando.
+//! *tower*-style middleware: layers that wrap command execution.
 //!
 //! ```no_run
 //! use lightning_core::{async_trait, Context, Middleware, Next, Reply, Result};
 //! use std::time::Duration;
 //!
-//! struct SoloAdmins;
+//! struct AdminsOnly;
 //!
 //! #[async_trait]
-//! impl Middleware for SoloAdmins {
+//! impl Middleware for AdminsOnly {
 //!     async fn handle(&self, ctx: Context, next: Next) -> Result<Reply> {
 //!         if ctx.user.id.get() == 1 {
 //!             return Err(lightning_core::Error::Forbidden);
@@ -16,8 +16,8 @@
 //!     }
 //! }
 //!
-//! // Y se registra así:
-//! // .middleware(SoloAdmins)
+//! // Register it like this:
+//! // .middleware(AdminsOnly)
 //! // .middleware(Cooldown::per_user(Duration::from_secs(3)))
 //! ```
 
@@ -34,14 +34,14 @@ use crate::context::Context;
 use crate::error::{Error, Result};
 use crate::reply::Reply;
 
-/// Una capa de middleware.
+/// A middleware layer.
 #[crate::async_trait]
 pub trait Middleware: Send + Sync + 'static {
-    /// Procesa la invocación y decide si llama a `next` o corta el flujo.
+    /// Processes the invocation and decides whether to call `next` or stop.
     async fn handle(&self, ctx: Context, next: Next) -> Result<Reply>;
 }
 
-/// El resto de la cadena de middleware (incluido el handler final).
+/// The rest of the middleware chain (including the final handler).
 pub struct Next {
     layers: Arc<[Arc<dyn Middleware>]>,
     index: usize,
@@ -49,7 +49,7 @@ pub struct Next {
 }
 
 impl Next {
-    /// Crea la cadena completa.
+    /// Builds the full chain.
     pub(crate) fn new(layers: Arc<[Arc<dyn Middleware>]>, terminal: RunFn) -> Self {
         Self {
             layers,
@@ -58,7 +58,7 @@ impl Next {
         }
     }
 
-    /// Continúa hacia la siguiente capa o ejecuta el handler.
+    /// Moves on to the next layer, or runs the handler.
     pub async fn run(mut self, ctx: Context) -> Result<Reply> {
         if let Some(layer) = self.layers.get(self.index).cloned() {
             self.index += 1;
@@ -79,13 +79,13 @@ impl std::fmt::Debug for Next {
     }
 }
 
-/// Permite usar closures como middleware.
+/// Lets you use closures as middleware.
 ///
 /// ```
 /// use lightning_core::{Context, Next, Reply, Result};
 ///
 /// let logging = |ctx: Context, next: Next| async move {
-///     println!("ejecutando {}", ctx.command);
+///     println!("running {}", ctx.command);
 ///     next.run(ctx).await
 /// };
 /// # let _ = logging;
@@ -101,7 +101,7 @@ where
     }
 }
 
-/// Solo permite la ejecución dentro de un servidor.
+/// Only allows execution inside a guild.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct GuildOnly;
 
@@ -116,7 +116,7 @@ impl Middleware for GuildOnly {
     }
 }
 
-/// Solo permite la ejecución por mensaje directo.
+/// Only allows execution in direct messages.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DmOnly;
 
@@ -131,7 +131,7 @@ impl Middleware for DmOnly {
     }
 }
 
-/// Límite de uso por usuario y comando.
+/// Per-user, per-command usage limit.
 ///
 /// ```
 /// use lightning_core::Cooldown;
@@ -147,7 +147,7 @@ pub struct Cooldown {
 }
 
 impl Cooldown {
-    /// Un uso cada `window` por usuario **y** comando.
+    /// One use every `window` per user **and** per command.
     pub fn per_user(window: Duration) -> Self {
         Self {
             window,
@@ -155,7 +155,7 @@ impl Cooldown {
         }
     }
 
-    /// Tiempo restante para el usuario, si está en cooldown.
+    /// Time left for the user, if they are on cooldown.
     pub fn remaining(&self, command: &'static str, user: Id<UserMarker>) -> Option<Duration> {
         let last = *self.buckets.get(&(command, user))?;
         let elapsed = last.elapsed();
@@ -163,7 +163,7 @@ impl Cooldown {
         (elapsed < self.window).then(|| self.window - elapsed)
     }
 
-    /// Limpia los buckets caducados (útil en un cron).
+    /// Drops expired buckets (useful from a cron job).
     pub fn sweep(&self) {
         let window = self.window;
         self.buckets.retain(|_, last| last.elapsed() < window);
@@ -186,10 +186,10 @@ impl Middleware for Cooldown {
     }
 }
 
-/// Ejecuta el pipeline completo: capas globales + capas del comando.
+/// Runs the full pipeline: global layers + command layers.
 ///
-/// Lo usa el runtime; también es útil en tests que quieran probar la cadena
-/// completa de middleware.
+/// Used by the runtime; also handy in tests that want to exercise the whole
+/// middleware chain.
 pub async fn run_pipeline(
     global: &[Arc<dyn Middleware>],
     command_layers: &[Arc<dyn Middleware>],

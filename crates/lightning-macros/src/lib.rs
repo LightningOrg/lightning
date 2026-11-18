@@ -1,12 +1,12 @@
-//! # ⚡ lightning-macros
+//! # lightning-macros
 //!
-//! Las macros que hacen que Lightning se sienta como magia:
+//! The macros that make Lightning feel like magic:
 //!
-//! - `#[command]` — convierte una función async en un comando slash **y** de prefijo.
-//! - `#[component]` — enruta botones, menús y modales por `custom_id`.
-//! - `#[event]` — suscribe un handler a un evento del Gateway.
-//! - `#[main]` — arranca el runtime con tracing y banner.
-//! - `#[derive(CommandArgs)]` — genera opciones de Discord y parser de prefijo.
+//! - `#[command]` — turns an async function into a slash **and** prefix command.
+//! - `#[component]` — routes buttons, menus and modals by `custom_id`.
+//! - `#[event]` — subscribes a handler to a Gateway event.
+//! - `#[main]` — boots the runtime with tracing and the banner.
+//! - `#[derive(CommandArgs)]` — generates Discord options and the prefix parser.
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
@@ -16,11 +16,11 @@ use syn::{
     Type, parse_macro_input, spanned::Spanned,
 };
 
-/// Marca una función como comando de Lightning.
+/// Marks a function as a Lightning command.
 ///
 /// ```ignore
 /// # use lightning::prelude::*;
-/// /// Responde con pong
+/// /// Replies with pong
 /// #[command]
 /// async fn ping(ctx: Context) -> Reply {
 ///     Reply::text("pong")
@@ -40,13 +40,13 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 }
 
-/// Marca una función como handler de un componente interactivo.
+/// Marks a function as the handler for an interactive component.
 ///
 /// ```ignore
 /// # use lightning::prelude::*;
 /// #[component("confirm")]
 /// async fn on_confirm(ctx: Context) -> Reply {
-///     Reply::text("¡confirmado!")
+///     Reply::text("confirmed!")
 /// }
 /// ```
 #[proc_macro_attribute]
@@ -60,16 +60,16 @@ pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 }
 
-/// Suscribe una función a un evento del Gateway.
+/// Subscribes a function to a Gateway event.
 ///
-/// El primer parámetro recibe el payload del evento por referencia; el segundo
-/// (opcional) recibe un `EventContext` con acceso a HTTP y estados.
+/// The first parameter receives the event payload by reference; the second
+/// (optional) one receives an `EventContext` with HTTP and state access.
 ///
 /// ```ignore
 /// # use lightning::prelude::*;
 /// #[event(MemberAdd)]
-/// async fn bienvenida(ev: &MemberAdd) {
-///     println!("entró {}", ev.user.id);
+/// async fn welcome(event: &MemberAdd) {
+///     println!("{} joined", event.user.id);
 /// }
 /// ```
 #[proc_macro_attribute]
@@ -83,13 +83,13 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 }
 
-/// Punto de entrada con runtime de Tokio, tracing y banner incluidos.
+/// Entry point with a Tokio runtime, tracing and banner included.
 ///
 /// ```ignore
 /// # use lightning::prelude::*;
 /// #[lightning::main]
 /// async fn main() {
-///     println!("hola");
+///     println!("hello");
 /// }
 /// ```
 #[proc_macro_attribute]
@@ -102,16 +102,16 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 }
 
-/// Deriva `CommandArgs` a partir de los campos de una struct.
+/// Derives `CommandArgs` from a struct's fields.
 ///
 /// ```ignore
 /// # use lightning::prelude::*;
 /// #[derive(CommandArgs)]
-/// struct Eco {
-///     /// Qué repetir
-///     texto: String,
-///     /// Cuántas veces (opcional)
-///     veces: Option<u8>,
+/// struct Echo {
+///     /// What to repeat
+///     text: String,
+///     /// How many times (optional)
+///     times: Option<u8>,
 /// }
 /// ```
 #[proc_macro_derive(CommandArgs, attributes(arg))]
@@ -178,7 +178,7 @@ impl CommandAttr {
                     }
                     return Err(syn::Error::new(
                         value.span(),
-                        "`permissions` espera un entero (bits de Discord)",
+                        "`permissions` expects an integer (Discord bits)",
                     ));
                 }
                 if meta.path.is_ident("guild_only") {
@@ -196,7 +196,7 @@ impl CommandAttr {
                 }
 
                 Err(meta.error(
-                    "atributo desconocido: usa name, description, kind, aliases, middleware, permissions, guild_only, nsfw o auto_register",
+                    "unknown attribute: use name, description, kind, aliases, middleware, permissions, guild_only, nsfw or auto_register",
                 ))
             })?;
         }
@@ -223,7 +223,7 @@ fn expand_command(cfg: CommandAttr, function: ItemFn) -> syn::Result<TokenStream
         Some(other) => {
             return Err(syn::Error::new(
                 fn_name.span(),
-                format!("kind desconocido `{other}`: usa slash, prefix o both"),
+                format!("unknown kind `{other}`: use slash, prefix or both"),
             ));
         }
     };
@@ -299,7 +299,7 @@ fn expand_command(cfg: CommandAttr, function: ItemFn) -> syn::Result<TokenStream
     })
 }
 
-/// Genera la función que extrae argumentos y llama al handler.
+/// Generates the function that extracts arguments and calls the handler.
 fn generate_runner(
     run_ident: &Ident,
     function: &ItemFn,
@@ -312,14 +312,14 @@ fn generate_runner(
         let FnArg::Typed(arg) = input else {
             return Err(syn::Error::new_spanned(
                 input,
-                "los comandos no pueden recibir `self`",
+                "commands cannot take `self`",
             ));
         };
 
         let Pat::Ident(pat) = &*arg.pat else {
             return Err(syn::Error::new_spanned(
                 &arg.pat,
-                "usa un nombre simple para el parámetro (no patrones)",
+                "use a plain parameter name (no patterns)",
             ));
         };
 
@@ -390,7 +390,7 @@ fn expand_event(variant: Ident, function: ItemFn) -> syn::Result<TokenStream2> {
     if params.next().is_none() {
         return Err(syn::Error::new_spanned(
             &function.sig,
-            "el handler de evento debe recibir el payload como primer parámetro",
+            "event handlers must take the payload as their first parameter",
         ));
     }
     let with_ctx = params.next().is_some();
@@ -434,13 +434,13 @@ fn expand_main(function: ItemFn) -> syn::Result<TokenStream2> {
     if function.sig.asyncness.is_none() {
         return Err(syn::Error::new_spanned(
             &function.sig,
-            "#[lightning::main] requiere una función `async fn main()`",
+            "#[lightning::main] requires an `async fn main()`",
         ));
     }
     if !function.sig.inputs.is_empty() {
         return Err(syn::Error::new_spanned(
             &function.sig,
-            "`main` no puede recibir parámetros",
+            "`main` cannot take parameters",
         ));
     }
 
@@ -472,25 +472,25 @@ fn expand_command_args(input: DeriveInput) -> syn::Result<TokenStream2> {
     let Data::Struct(data) = &input.data else {
         return Err(syn::Error::new_spanned(
             &input.ident,
-            "CommandArgs solo se puede derivar para structs",
+            "CommandArgs can only be derived for structs",
         ));
     };
     let Fields::Named(fields) = &data.fields else {
         return Err(syn::Error::new_spanned(
             &data.fields,
-            "CommandArgs requiere una struct con campos con nombre",
+            "CommandArgs requires a struct with named fields",
         ));
     };
     if !input.generics.params.is_empty() {
         return Err(syn::Error::new_spanned(
             &input.generics,
-            "CommandArgs no soporta genéricos",
+            "CommandArgs does not support generics",
         ));
     }
 
     let mut infos = Vec::new();
     for field in &fields.named {
-        let ident = field.ident.clone().expect("campos con nombre");
+        let ident = field.ident.clone().expect("named fields");
         let mut name = ident.to_string().trim_start_matches("r#").to_owned();
         let mut description: Option<String> = doc_comment(&field.attrs);
         let mut rest = false;
@@ -513,7 +513,7 @@ fn expand_command_args(input: DeriveInput) -> syn::Result<TokenStream2> {
                     return Ok(());
                 }
 
-                Err(meta.error("atributo desconocido: usa name, description o rest"))
+                Err(meta.error("unknown attribute: use name, description or rest"))
             })?;
         }
 
@@ -679,7 +679,7 @@ fn string_array(expr: Expr) -> syn::Result<Vec<String>> {
     let Expr::Array(ExprArray { elems, .. }) = expr else {
         return Err(syn::Error::new_spanned(
             expr,
-            "se esperaba una lista, por ejemplo `[\"p\", \"pi\"]`",
+            "expected a list, for example `[\"p\", \"pi\"]`",
         ));
     };
 
@@ -688,9 +688,9 @@ fn string_array(expr: Expr) -> syn::Result<Vec<String>> {
         .map(|elem| match elem {
             Expr::Lit(lit) => match lit.lit {
                 Lit::Str(text) => Ok(text.value()),
-                _ => Err(syn::Error::new_spanned(lit, "se esperaba un string")),
+                _ => Err(syn::Error::new_spanned(lit, "expected a string")),
             },
-            other => Err(syn::Error::new_spanned(other, "se esperaba un string")),
+            other => Err(syn::Error::new_spanned(other, "expected a string")),
         })
         .collect()
 }
@@ -699,14 +699,14 @@ fn expr_array(expr: Expr) -> syn::Result<Vec<Expr>> {
     let Expr::Array(ExprArray { elems, .. }) = expr else {
         return Err(syn::Error::new_spanned(
             expr,
-            "se esperaba una lista de middleware, por ejemplo `[Cooldown::per_user(...)]`",
+            "expected a middleware list, for example `[Cooldown::per_user(...)]`",
         ));
     };
 
     Ok(elems.into_iter().collect())
 }
 
-/// Devuelve `T` si el tipo es `Args<T>`.
+/// Returns `T` if the type is `Args<T>`.
 fn args_generic(ty: &Type) -> Option<Type> {
     let Type::Path(path) = ty else {
         return None;

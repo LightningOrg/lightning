@@ -1,4 +1,4 @@
-//! Estado compartido e inyección de dependencias.
+//! Shared state and dependency injection.
 
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
@@ -7,59 +7,59 @@ use std::sync::Arc;
 
 type BoxedState = Arc<dyn Any + Send + Sync>;
 
-/// Mapa de estados tipado: `TypeId` → `Arc<T>`.
+/// Typed state map: `TypeId` → `Arc<T>`.
 ///
-/// Es el "grid" de Lightning: todo lo que inyectas con
-/// `Lightning::new().state(...)` acaba aquí y se extrae con [`State`].
+/// This is Lightning's "grid": everything you inject with
+/// `Lightning::new().state(...)` ends up here and is extracted with [`State`].
 #[derive(Default, Clone)]
 pub struct StateMap {
     entries: HashMap<TypeId, BoxedState>,
 }
 
 impl StateMap {
-    /// Crea un mapa vacío.
+    /// Creates an empty map.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Guarda un valor, reemplazando el anterior del mismo tipo.
+    /// Stores a value, replacing the previous one of the same type.
     pub fn insert<T: Send + Sync + 'static>(&mut self, value: T) {
         self.entries.insert(TypeId::of::<T>(), Arc::new(value));
     }
 
-    /// Guarda un valor ya envuelto en `Arc` (útil para estados caros de clonar).
+    /// Stores a value that already lives in an `Arc` (useful for expensive states).
     pub fn insert_arc<T: Send + Sync + 'static>(&mut self, value: Arc<T>) {
         self.entries.insert(TypeId::of::<T>(), value);
     }
 
-    /// Recupera el estado del tipo `T`.
+    /// Retrieves the state of type `T`.
     pub fn get<T: Send + Sync + 'static>(&self) -> Option<Arc<T>> {
         self.entries
             .get(&TypeId::of::<T>())
             .and_then(|boxed| boxed.clone().downcast::<T>().ok())
     }
 
-    /// `true` si el mapa contiene el tipo `T`.
+    /// `true` if the map contains type `T`.
     pub fn contains<T: Send + Sync + 'static>(&self) -> bool {
         self.entries.contains_key(&TypeId::of::<T>())
     }
 
-    /// Número de estados registrados.
+    /// Number of registered states.
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
-    /// `true` si no hay ningún estado.
+    /// `true` if no state has been registered.
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 }
 
-/// Extractor de estado: pide `State<MiBaseDeDatos>` en la firma y listo.
+/// State extractor: ask for `State<MyDatabase>` in the signature and you're done.
 pub struct State<T>(pub Arc<T>);
 
 impl<T> State<T> {
-    /// Devuelve el `Arc` interno.
+    /// Returns the inner `Arc`.
     pub fn into_inner(self) -> Arc<T> {
         self.0
     }

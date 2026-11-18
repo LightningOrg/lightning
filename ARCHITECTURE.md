@@ -1,35 +1,35 @@
-# Arquitectura de ⚡ Lightning
+# Lightning architecture
 
-Este documento explica cómo está montado el framework y por qué. Si vienes a
-tocar el código, empieza por aquí.
+This document explains how the framework is put together and why. If you are
+here to work on the code, start here.
 
-## Las tres crates
+## The three crates
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ lightning                (runtime)                          │
-│   Gateway, HTTP, sharding, registro, conversión a Discord    │
+│   Gateway, HTTP, sharding, registration, Discord conversion  │
 │   ┌──────────────────────────────────────────────────────┐  │
-│   │ lightning-core          (núcleo, sin red)            │  │
-│   │   Command, Context, extractores, Middleware, Reply    │  │
-│   │   Responder (trait) · StateMap · Error                │  │
+│   │ lightning-core          (core, no network)           │  │
+│   │   Command, Context, extractors, Middleware, Reply    │  │
+│   │   Responder (trait) · StateMap · Error               │  │
 │   └──────────────────────────────────────────────────────┘  │
 │   lightning-macros       (procedural macros)                │
 │   #[command] #[event] #[component] #[main] derive(CommandArgs)│
 └─────────────────────────────────────────────────────────────┘
 ```
 
-- **`lightning-core`** no depende de `tokio` ni de `twilight-http`: solo de los
-  tipos de datos de `twilight-model`. Se puede usar en tests, en un runtime
-  distinto o incluso como base para otro transporte.
-- **`lightning`** es la fachada que usa el usuario (`use lightning::prelude::*`).
-- **`lightning-macros`** genera código que siempre apunta a `::lightning::…`,
-  por eso el usuario solo depende de la fachada.
+- **`lightning-core`** does not depend on `tokio` or `twilight-http`: only on
+  `twilight-model` data types. It can be used in tests, on a different runtime,
+  or even as the basis for another transport.
+- **`lightning`** is the facade users depend on (`use lightning::prelude::*`).
+- **`lightning-macros`** generates code that always points at `::lightning::…`,
+  which is why users only depend on the facade.
 
-## El viaje de un evento
+## The journey of an event
 
 ```
-        Gateway (twilight-gateway, un Shard por tarea)
+        Gateway (twilight-gateway, one Shard per task)
                                 │  Event
                                 ▼
                      Runtime::dispatch
@@ -37,9 +37,9 @@ tocar el código, empieza por aquí.
              ▼                                      ▼
     InteractionCreate                        MessageCreate
              │                                      │
-    ┌────────┼─────────┐                    ¿empieza por prefijo?
+    ┌────────┼─────────┐                    starts with the prefix?
     ▼        ▼         ▼                            │
- slash   componente  modal                    tokenize + buscar
+ slash   component   modal                   tokenize + lookup
     │        │         │                            │
     └────────┴─────────┘                            │
              │                                      │
@@ -47,7 +47,7 @@ tocar el código, empieza por aquí.
    Context { user, guild, channel, options, tokens, state, responder }
                                 │
                                 ▼
-        run_pipeline(global ++ capas del comando)
+        run_pipeline(global ++ command layers)
                                 │
                     ┌───────────┴───────────┐
                     ▼                       ▼
@@ -57,50 +57,50 @@ tocar el código, empieza por aquí.
                                 ▼
                      Command::run (RunFn)
                                 │
-                     extractores + handler
+                     extractors + handler
                                 │
                                 ▼
                          Result<Reply>
                                 │
                                 ▼
-                  Responder (HTTP real o mock)
+                  Responder (real HTTP or mock)
 ```
 
-## Decisiones de diseño
+## Design decisions
 
-### 1. Twilight como motor, Lightning como capa
+### 1. Twilight as the engine, Lightning as the layer
 
-Twilight ya resuelve lo aburrido y difícil de acertar: Gateway con resume y
-heartbeat, ratelimits por bucket, caché opcional, validación de payloads. Lo que
-no trae es ergonomía: registrar comandos, enrutar interacciones, parsear
-opciones y responder son tareas manuales.
+Twilight already solves the boring and hard-to-get-right parts: Gateway with
+resume and heartbeats, per-bucket rate limits, optional caching, payload
+validation. What it does not provide is ergonomics: registering commands, routing
+interactions, parsing options and replying are all manual work.
 
-Lightning no reimplementa el transporte: lo envuelve. Así heredamos los arreglos
-de Twilight y nos centramos en la capa de producto.
+Lightning does not reimplement the transport: it wraps it. That way we inherit
+Twilight's fixes and focus on the product layer.
 
-### 2. `inventory` para el auto-registro
+### 2. `inventory` for auto-registration
 
-`#[command]` emite, además de la función, una entrada estática:
+`#[command]` emits, alongside the function, a static entry:
 
 ```rust
 inventory::submit! {
-    lightning::Command::new("ping", "Responde pong")
+    lightning::Command::new("ping", "Replies with pong")
         .kind(CommandKind::Both)
         .options(<() as CommandArgs>::OPTIONS)
         .handler(__lightning_run_ping)
 }
 ```
 
-`Command` es `const`-construible (solo `&'static str`, slices y punteros a
-función), así que el registro no tiene coste en runtime: es una sección más del
-binario. En `run()` se recogen todas las entradas y se publican en Discord.
+`Command` is `const`-constructible (only `&'static str`, slices and function
+pointers), so registration costs nothing at runtime: it is just another binary
+section. `run()` collects every entry and publishes them to Discord.
 
-Ventajas: cero listas, cero `use` olvidados, los comandos viven donde se usan.
-Contras: los comandos no pueden capturar estado del entorno (para eso está el
-sistema de `State`), y algunos enlazadores agresivos pueden descartar entradas
-(se mitiga con `#[used]`, que ya aplica `inventory`).
+Upsides: no lists, no forgotten `use` statements, commands live where they are
+used. Downsides: commands cannot capture environment state (that is what the
+`State` system is for), and some aggressive linkers may drop entries (mitigated
+by `#[used]`, which `inventory` already applies).
 
-### 3. El responder es un trait
+### 3. The responder is a trait
 
 ```rust
 #[async_trait]
@@ -111,76 +111,73 @@ pub trait Responder: Send + Sync + 'static {
 }
 ```
 
-En producción lo implementa `TwilightResponder`, que sabe si la invocación viene
-de una interacción (token, `create_response`, followups) o de un mensaje
-(`create_message`). En tests lo implementa `MockResponder`, que guarda los
-`Reply` en un `Vec`.
+In production it is implemented by `TwilightResponder`, which knows whether the
+invocation comes from an interaction (token, `create_response`, followups) or a
+message (`create_message`). In tests it is implemented by `MockResponder`, which
+stores `Reply` values in a `Vec`.
 
-Es la decisión que hace que el framework sea testeable de verdad: la misma
-función de handler, el mismo pipeline y los mismos extractores, sin red.
+This is the decision that makes the framework genuinely testable: same handler
+function, same pipeline and same extractors, no network.
 
-### 4. JSON como representación intermedia
+### 4. JSON as the intermediate representation
 
-`Reply` guarda textos, embeds y componentes como `serde_json::Value` con el
-formato exacto de la API de Discord. El runtime los convierte a los tipos de
-`twilight-model` al enviarlos (`serde_json::from_value::<Embed>`).
+`Reply` stores text, embeds and components as `serde_json::Value` using Discord's
+exact API shape. The runtime converts them to `twilight-model` types when sending
+(`serde_json::from_value::<Embed>`).
 
-Por qué:
+Why:
 
-- Los tipos de Discord cambian a menudo; el JSON de la API es el contrato estable.
-- Un solo lugar que arreglar si Twilight cambia una firma.
-- Los tests validan de verdad el JSON final (ver `convert.rs`).
+- Discord's types change often; the API JSON is the stable contract.
+- A single place to fix if Twilight changes a signature.
+- Tests validate the final JSON for real (see `convert.rs`).
 
-El coste es una deserialización por mensaje: irrelevante frente a la latencia de
-la API.
+The cost is one deserialization per message: irrelevant next to API latency.
 
-### 5. El pipeline se construye una vez
+### 5. The pipeline is built once
 
-`Command::build_layers()` se ejecuta al arrancar, no en cada invocación. Eso
-permite que capas con estado (`Cooldown` con su `DashMap`) compartan ese estado
-entre mensajes sin variables globales.
+`Command::build_layers()` runs at startup, not on every invocation. That lets
+stateful layers (`Cooldown` with its `DashMap`) share that state across messages
+without globals.
 
-Las capas globales se concatenan con las del comando en el mismo orden en que se
-declararon.
+Global layers are concatenated with command layers in declaration order.
 
-### 6. Una función, dos superficies
+### 6. One function, two surfaces
 
-El puente es la struct de argumentos:
+The bridge is the argument struct:
 
-- `CommandDataOption[]` de Discord → `Map<String, Value>` → `T::from_options`.
-- `!eco hola 2` → tokenizer → `T::from_prefix`.
+- Discord's `CommandDataOption[]` → `Map<String, Value>` → `T::from_options`.
+- `!echo hello 2` → tokenizer → `T::from_prefix`.
 
-`#[derive(CommandArgs)]` genera ambos parsers desde los mismos campos, así que no
-hay dos definiciones que se puedan desincronizar. El precio es que solo soporta
-tipos "razonables"; para lo exótico se puede implementar `CommandArgs` a mano.
+`#[derive(CommandArgs)]` generates both parsers from the same fields, so there
+are no two definitions that can drift apart. The price is that it only supports
+"reasonable" types; for anything exotic you can implement `CommandArgs` by hand.
 
-## Flujo de una respuesta
+## The life of a response
 
-1. El handler devuelve `impl IntoReply` (`Reply`, `String`, `()`,
+1. The handler returns `impl IntoReply` (`Reply`, `String`, `()`,
    `Result<T, Error>`…).
-2. `IntoReply::into_reply` lo normaliza a `Reply`.
-3. Si hubo `defer`, el responder manda un *followup*; si no, la respuesta
-   inicial (tipo 4, o tipo 7 para botones).
-4. Un `Reply` vacío no envía nada: así puedes hacer `ctx.defer().await?` y luego
-   decidir no responder.
-5. Un `Err` se convierte en `❌ mensaje` efímero y se registra con `tracing`.
+2. `IntoReply::into_reply` normalizes it to `Reply`.
+3. If `defer` was called, the responder sends a *followup*; otherwise it sends
+   the initial response (type 4, or type 7 for buttons).
+4. An empty `Reply` sends nothing: that lets you call `ctx.defer().await?` and
+   then decide not to reply.
+5. An `Err` becomes an ephemeral `❌ …` message and is logged with `tracing`.
 
-## Límites conocidos (MVP)
+## Known limits (MVP)
 
-- Autocompletado: los payloads se ignoran de momento.
-- Subcomandos: el enrutado existe para opciones planas; los grupos se aplanan.
-- Sharding: shards propios, sin `ShardManager` ni cola coordinada.
-- No hay caché de guilds: si necesitas miembros o roles, usa HTTP o añade
-  `twilight-cache-inmemory` en una capa propia.
-- `Reply` no soporta adjuntos (attachments) ni `payload_json`.
+- Autocomplete: payloads are ignored for now (answered with an empty list).
+- Subcommands: routing exists for flat options; groups are flattened.
+- Sharding: own shards, no `ShardManager` or coordinated queue.
+- No guild cache: if you need members or roles, use HTTP or add
+  `twilight-cache-inmemory` in your own layer.
+- `Reply` does not support attachments or `payload_json`.
 
-## Cómo añadir un comando al framework
+## Adding a command surface to the framework
 
-1. `#[command]` genera `RunFn` y la entrada de `inventory`.
-2. `Runtime::dispatch` encuentra el comando por nombre.
-3. Construye el `Context` (interacción o mensaje).
-4. Ejecuta `run_pipeline` y responde con el `Responder`.
+1. `#[command]` generates a `RunFn` and the `inventory` entry.
+2. `Runtime::dispatch` finds the command by name.
+3. It builds the `Context` (interaction or message).
+4. It runs `run_pipeline` and replies through the `Responder`.
 
-Si añades una superficie nueva (por ejemplo, menús), reutiliza `RunFn`, el
-pipeline y `Context`: solo cambia la forma de construir el contexto y el
-`custom_id`.
+If you add a new surface (select menus, for example), reuse `RunFn`, the pipeline
+and `Context`: only the way you build the context and the `custom_id` change.
