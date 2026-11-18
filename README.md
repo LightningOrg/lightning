@@ -1,5 +1,9 @@
 # ⚡ Lightning
 
+[![CI](https://github.com/ImDaiDev/lightning/actions/workflows/ci.yml/badge.svg)](https://github.com/ImDaiDev/lightning/actions/workflows/ci.yml)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#licencia)
+[![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
+
 **Bots de Discord a la velocidad del rayo.**
 
 Lightning es un framework de Rust para construir bots de Discord con una idea
@@ -361,4 +365,7 @@ cargo run -p examples-basics
 
 ## Licencia
 
-MIT OR Apache-2.0.
+MIT OR Apache-2.0. Puedes elegir la que prefieras:
+
+- [`LICENSE-MIT`](LICENSE-MIT)
+- [`LICENSE-APACHE`](LICENSE-APACHE)

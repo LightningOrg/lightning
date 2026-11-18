@@ -63,7 +63,7 @@ pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// Suscribe una función a un evento del Gateway.
 ///
 /// El primer parámetro recibe el payload del evento por referencia; el segundo
-/// (opcional) recibe un [`EventContext`] con acceso a HTTP y estados.
+/// (opcional) recibe un `EventContext` con acceso a HTTP y estados.
 ///
 /// ```ignore
 /// # use lightning::prelude::*;

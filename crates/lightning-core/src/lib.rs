@@ -5,7 +5,7 @@
 //!
 //! Esta crate no habla con la red: define el modelo de comandos, el contexto de
 //! ejecución, los extractores tipados, la pila de middleware y el formato de
-//! respuesta. El runtime real (Gateway + HTTP) vive en la crate [`lightning`].
+//! respuesta. El runtime real (Gateway + HTTP) vive en la crate `lightning`.
 //!
 //! La gracia de separar el núcleo es que **el envío de mensajes es un trait**
 //! ([`Responder`]): puedes ejecutar tus handlers contra un responder falso y
