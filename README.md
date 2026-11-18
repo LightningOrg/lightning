@@ -260,7 +260,7 @@ async fn on_confirm(args: Args<Choice>) -> Reply {
 
 The part after `:` is parsed as JSON and delivered as `Args<T>`, so a button's
 state travels **typed**. Modals are answered with
-`Reply::modal(Modal::new("id", "Title").text_input(...))`.
+`Reply::new().modal(Modal::new("id", "Title").text_input(...))`.
 
 ### Events
 
