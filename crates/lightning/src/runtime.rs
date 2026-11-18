@@ -136,11 +136,19 @@ impl Runtime {
                 });
             }
             Event::MessageCreate(created) => {
-                let runtime = Arc::clone(self);
-                let message = created.message.clone();
-                tokio::spawn(async move {
-                    runtime.handle_message(message, shard_id).await;
+                // Cheap pre-filter before spawning: most messages are plain
+                // chat, and cloning them just to discard the task is wasteful.
+                let is_command = self.prefix.as_deref().is_some_and(|prefix| {
+                    !created.message.author.bot && created.message.content.starts_with(prefix)
                 });
+
+                if is_command {
+                    let runtime = Arc::clone(self);
+                    let message = created.message.clone();
+                    tokio::spawn(async move {
+                        runtime.handle_message(message, shard_id).await;
+                    });
+                }
             }
             Event::Ready(ready) => {
                 self.voice.set_user_id(ready.user.id);
