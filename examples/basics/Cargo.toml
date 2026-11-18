@@ -1,0 +1,10 @@
+[package]
+name = "examples-basics"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+lightning.workspace = true
+tokio.workspace = true
+tracing.workspace = true

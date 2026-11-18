@@ -1,0 +1,17 @@
+[package]
+name = "lightning-macros"
+description = "Macros de ⚡ Lightning: #[command], #[event], #[component], #[main] y derive(CommandArgs)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn.workspace = true
+quote.workspace = true
+proc-macro2.workspace = true
