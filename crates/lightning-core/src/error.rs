@@ -63,6 +63,10 @@ pub enum Error {
     #[error("error talking to Discord: {0}")]
     Transport(String),
 
+    /// Voice subsystem failure (joining, playing audio, moderation…).
+    #[error("voice error: {0}")]
+    Voice(String),
+
     /// Internal framework failure.
     #[error("internal error: {0}")]
     Internal(String),

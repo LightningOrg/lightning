@@ -25,6 +25,7 @@ tracing-subscriber.workspace = true
 inventory.workspace = true
 async-trait.workspace = true
 dashmap.workspace = true
+songbird.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true

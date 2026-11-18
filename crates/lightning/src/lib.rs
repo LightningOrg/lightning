@@ -64,15 +64,19 @@
 #![warn(missing_docs)]
 
 pub mod testing;
+pub mod voice;
 
 mod bot;
 mod convert;
 mod events;
 mod responder;
 mod runtime;
+mod voice_states;
 
 pub use bot::Lightning;
 pub use events::{ComponentHandler, EventContext, EventHandler};
+pub use voice::{Voice, VoiceConnection};
+pub use voice_states::VoiceStates;
 
 pub use lightning_core::{
     ActionRow, Args, Author, BoxFuture, Button, ButtonStyle, ChannelId, Command, CommandArgs,
@@ -126,7 +130,8 @@ pub mod prelude {
     pub use crate::model::{DiscordMessage, Event, Id, Intents, PartialMember, User};
     pub use crate::{
         ActionRow, Args, Button, ButtonStyle, Command, CommandArgs, CommandKind, Context, Cooldown,
-        Embed, Error, Lightning, Middleware, Modal, Next, OptionKind, Reply, Result, State,
+        Embed, Error, Lightning, Middleware, Modal, Next, OptionKind, Reply, Result, State, UserId,
+        Voice, VoiceConnection, VoiceStates,
     };
     pub use crate::{command, component, event};
 }

@@ -9,6 +9,9 @@ use twilight_http::Client;
 use twilight_model::id::Id;
 use twilight_model::id::marker::ApplicationMarker;
 
+use crate::voice::Voice;
+use crate::voice_states::VoiceStates;
+
 /// Access to runtime services from inside an event handler.
 #[derive(Clone)]
 pub struct EventContext {
@@ -20,6 +23,10 @@ pub struct EventContext {
     pub state: Arc<StateMap>,
     /// Shard that received the event.
     pub shard_id: u32,
+    /// Voice subsystem (join, leave, play, moderation).
+    pub voice: Voice,
+    /// Live voice-state cache.
+    pub voice_states: VoiceStates,
 }
 
 impl std::fmt::Debug for EventContext {
@@ -27,6 +34,7 @@ impl std::fmt::Debug for EventContext {
         f.debug_struct("EventContext")
             .field("application_id", &self.application_id)
             .field("shard_id", &self.shard_id)
+            .field("voice", &self.voice)
             .finish_non_exhaustive()
     }
 }

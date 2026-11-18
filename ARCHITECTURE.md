@@ -9,6 +9,7 @@ here to work on the code, start here.
 ┌─────────────────────────────────────────────────────────────┐
 │ lightning                (runtime)                          │
 │   Gateway, HTTP, sharding, registration, Discord conversion  │
+│   Voice: voice states + songbird (join, play, moderation)   │
 │   ┌──────────────────────────────────────────────────────┐  │
 │   │ lightning-core          (core, no network)           │  │
 │   │   Command, Context, extractors, Middleware, Reply    │  │
@@ -23,6 +24,8 @@ here to work on the code, start here.
   `twilight-model` data types. It can be used in tests, on a different runtime,
   or even as the basis for another transport.
 - **`lightning`** is the facade users depend on (`use lightning::prelude::*`).
+  It also owns the voice layer: a live `VoiceStates` cache and a thin wrapper
+  over songbird's driver, wired to Lightning's own shards.
 - **`lightning-macros`** generates code that always points at `::lightning::…`,
   which is why users only depend on the facade.
 
@@ -152,6 +155,28 @@ The bridge is the argument struct:
 are no two definitions that can drift apart. The price is that it only supports
 "reasonable" types; for anything exotic you can implement `CommandArgs` by hand.
 
+### 7. Voice rides on the same shard
+
+Joining a voice channel is not an HTTP call: it is gateway opcode 4 on the shard
+that owns the guild. Lightning already owns every `Shard`, so `run_shard`
+registers a `MessageSender` with the voice subsystem and `Call::join` can send
+the update without opening a second gateway connection.
+
+The two payloads Discord answers with (`VOICE_STATE_UPDATE` for the bot and
+`VOICE_SERVER_UPDATE`) are fed back into the `Call` from the event loop, which
+completes the connection. Audio itself is delegated to
+[songbird](https://github.com/serenity-rs/songbird)'s driver; Lightning only
+implements its `VoiceUpdate` and `GenericSharder` seams, which keeps songbird
+from depending on Twilight at all.
+
+Commands are spawned instead of awaited inside the shard loop. That detail is
+what makes `voice.join(..).await` possible: if the shard were busy waiting for
+the handler, it could not read the very events the handler is waiting for.
+
+The voice-state cache (`VoiceStates`) is seeded from `GuildCreate` and updated
+on every `VoiceStateUpdate`. It is intentionally small: only the states the
+count queries need, no members, roles or channels.
+
 ## The life of a response
 
 1. The handler returns `impl IntoReply` (`Reply`, `String`, `()`,
@@ -168,6 +193,8 @@ are no two definitions that can drift apart. The price is that it only supports
 - Autocomplete: payloads are ignored for now (answered with an empty list).
 - Subcommands: routing exists for flat options; groups are flattened.
 - Sharding: own shards, no `ShardManager` or coordinated queue.
+- Voice: receiving audio (voice transcription) is not implemented, only
+  playback and moderation; audio requires `cmake` to build libopus.
 - No guild cache: if you need members or roles, use HTTP or add
   `twilight-cache-inmemory` in your own layer.
 - `Reply` does not support attachments or `payload_json`.

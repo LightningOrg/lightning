@@ -13,6 +13,8 @@ use twilight_model::id::marker::GuildMarker;
 
 use crate::events::ComponentHandler;
 use crate::runtime::{Runtime, RuntimeConfig, run_shard};
+use crate::voice::Voice;
+use crate::voice_states::VoiceStates;
 
 /// Builder and entry point for a Lightning bot.
 ///
@@ -47,7 +49,10 @@ impl Lightning {
     pub fn new() -> Self {
         Self {
             token: None,
-            intents: Intents::GUILDS | Intents::GUILD_MESSAGES | Intents::DIRECT_MESSAGES,
+            intents: Intents::GUILDS
+                | Intents::GUILD_MESSAGES
+                | Intents::DIRECT_MESSAGES
+                | Intents::GUILD_VOICE_STATES,
             prefix: None,
             state: StateMap::new(),
             middleware: Vec::new(),
@@ -197,6 +202,8 @@ impl Lightning {
                 .max(1),
         };
 
+        let voice = Voice::new(Arc::clone(&http), VoiceStates::new(), shard_total);
+
         let runtime = Arc::new(Runtime::new(
             Arc::clone(&http),
             RuntimeConfig {
@@ -207,6 +214,7 @@ impl Lightning {
                 state: Arc::new(self.state),
                 middleware: self.middleware,
                 shard_total,
+                voice,
             },
         ));
 

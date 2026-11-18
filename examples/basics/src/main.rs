@@ -1,5 +1,6 @@
 //! Complete Lightning example:
-//! slash + prefix commands, typed arguments, state, middleware, buttons and events.
+//! slash + prefix commands, typed arguments, state, middleware, buttons, events
+//! and voice channels (join, play audio, text chat and moderation).
 //!
 //! Run it with:
 //!
@@ -14,7 +15,9 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use lightning::model::incoming::MemberAdd;
+use lightning::EventContext;
+use lightning::model::incoming::{MemberAdd, VoiceStateUpdate};
+use lightning::model::{ChannelMarker, UserMarker};
 use lightning::prelude::*;
 
 /// State shared by every handler.
@@ -40,6 +43,22 @@ struct Echo {
 struct Choice {
     /// Selected option
     choice: String,
+}
+
+/// Arguments for voice moderation commands.
+#[derive(CommandArgs)]
+struct Target {
+    /// Member to act on
+    user: Id<UserMarker>,
+}
+
+/// A member and a destination channel.
+#[derive(CommandArgs)]
+struct MoveTarget {
+    /// Member to move
+    user: Id<UserMarker>,
+    /// Voice channel to move them to
+    channel: Id<ChannelMarker>,
 }
 
 /// Replies with pong and the name of whoever asked.
@@ -102,10 +121,112 @@ async fn on_confirm(args: Args<Choice>) -> Reply {
     }
 }
 
+/// Counts the people in your voice channel.
+#[command(guild_only, name = "voice-count")]
+async fn voice_count(ctx: Context, states: VoiceStates, user: UserId) -> Result<Reply> {
+    let guild = ctx.guild_id()?;
+    let Some(channel) = states.channel_of(guild, user.0) else {
+        return Ok(Reply::text("Join a voice channel first.").ephemeral());
+    };
+
+    Ok(Reply::text(format!(
+        "**{}** people in <#{}>",
+        states.count(channel),
+        channel.get()
+    )))
+}
+
+/// Joins the voice channel you are in.
+#[command(guild_only)]
+async fn join(ctx: Context, voice: Voice, states: VoiceStates, user: UserId) -> Result<Reply> {
+    let guild = ctx.guild_id()?;
+    let Some(channel) = states.channel_of(guild, user.0) else {
+        return Ok(Reply::text("Join a voice channel first.").ephemeral());
+    };
+
+    voice.join(guild, channel).await?;
+
+    Ok(Reply::text(format!("Connected to <#{}>.", channel.get())))
+}
+
+/// Leaves the voice channel.
+#[command(guild_only)]
+async fn leave(ctx: Context, voice: Voice) -> Result<Reply> {
+    voice.leave(ctx.guild_id()?).await?;
+    Ok(Reply::text("Left the voice channel."))
+}
+
+/// Plays the bundled beep in your voice channel.
+#[command(guild_only)]
+async fn play(ctx: Context, voice: Voice) -> Result<Reply> {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/beep.wav");
+    let _ = voice.play_file(ctx.guild_id()?, path).await?;
+
+    Ok(Reply::text("Playing `beep.wav`."))
+}
+
+/// Writes in the text chat of your voice channel.
+#[command(guild_only)]
+async fn say(ctx: Context, voice: Voice, states: VoiceStates, user: UserId) -> Result<Reply> {
+    let guild = ctx.guild_id()?;
+    let Some(channel) = states.channel_of(guild, user.0) else {
+        return Ok(Reply::text("Join a voice channel first.").ephemeral());
+    };
+
+    voice
+        .say(channel, "Hello from the voice channel chat!")
+        .await?;
+
+    Ok(Reply::text("Message sent.").ephemeral())
+}
+
+/// Moves a member to another voice channel (needs Move Members).
+#[command(guild_only, permissions = 16777216)]
+async fn move_member(ctx: Context, voice: Voice, args: Args<MoveTarget>) -> Result<Reply> {
+    voice
+        .move_to(ctx.guild_id()?, args.user, args.channel)
+        .await?;
+
+    Ok(Reply::text(format!(
+        "Moved <@{}> to <#{}>.",
+        args.user.get(),
+        args.channel.get()
+    )))
+}
+
+/// Disconnects a member from voice (needs Move Members).
+#[command(guild_only, permissions = 16777216)]
+async fn disconnect(ctx: Context, voice: Voice, args: Args<Target>) -> Result<Reply> {
+    voice.disconnect(ctx.guild_id()?, args.user).await?;
+
+    Ok(Reply::text(format!("Disconnected <@{}>.", args.user.get())))
+}
+
+/// Server-mutes a member (needs Mute Members).
+#[command(guild_only, permissions = 4194304)]
+async fn mute(ctx: Context, voice: Voice, args: Args<Target>) -> Result<Reply> {
+    voice.server_mute(ctx.guild_id()?, args.user, true).await?;
+
+    Ok(Reply::text(format!("Muted <@{}>.", args.user.get())))
+}
+
 /// Runs when someone joins the server.
 #[event(MemberAdd)]
 async fn welcome(event: &MemberAdd) {
     println!("{} joined", event.user.name);
+}
+
+/// Logs voice movements and shows how many people share the channel.
+#[event(VoiceStateUpdate)]
+async fn voice_log(event: &VoiceStateUpdate, ctx: EventContext) {
+    if let Some(channel) = event.channel_id {
+        println!(
+            "{} is now in {} ({} connected)",
+            event.user_id,
+            channel,
+            ctx.voice_states.count(channel)
+        );
+    }
 }
 
 #[lightning::main]

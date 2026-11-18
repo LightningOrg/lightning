@@ -37,6 +37,7 @@ with Discord, and can be tested without a network connection.
 | tower-style middleware | ✅ `next.run(ctx)` | ⚠️ hooks | ❌ |
 | Testing without Discord | ✅ `Responder` is a trait | ⚠️ hand-rolled mocks | ❌ |
 | Sharding | ✅ automatic | ✅ | ⚠️ manual |
+| Voice | ✅ join, play, moderate | ✅ via songbird | ⚠️ via songbird |
 
 Lightning's personality comes from three decisions:
 
@@ -60,7 +61,9 @@ lightning = { path = "../Lightning/crates/lightning" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
-Rust **1.85+** (edition 2024).
+Rust **1.85+** (edition 2024). Voice playback builds libopus from source, so you
+also need **CMake** and a C compiler (`winget install Kitware.CMake` on Windows,
+`apt install cmake build-essential` on Debian/Ubuntu).
 
 ---
 
@@ -273,7 +276,7 @@ async fn welcome(event: &MemberAdd) {
 }
 ```
 
-Add a second parameter to receive an `EventContext` with HTTP and state:
+Add a second parameter to receive an `EventContext` with HTTP, state and voice:
 
 ```rust
 #[event(MessageCreate)]
@@ -281,6 +284,50 @@ async fn log(event: &MessageCreate, ctx: EventContext) {
     let _ = ctx.http;
 }
 ```
+
+### Voice channels
+
+Lightning keeps a live voice-state cache and routes gateway voice updates
+through the right shard, so joining, playing audio and moderating is plain
+`async` code:
+
+```rust
+#[command(guild_only)]
+async fn join(ctx: Context, voice: Voice, states: VoiceStates, user: UserId) -> Result<Reply> {
+    let guild = ctx.guild_id()?;
+    let channel = states
+        .channel_of(guild, user.0)
+        .ok_or_else(|| Error::Voice("join a voice channel first".into()))?;
+
+    let connection = voice.join(guild, channel).await?;
+    connection.play_file("assets/beep.wav").await;
+
+    Ok(Reply::text(format!("connected to <#{channel}>")))
+}
+```
+
+| Need | API |
+|---|---|
+| Count who is in a channel | `states.count(channel)`, `states.members(channel)` |
+| Join / leave | `voice.join(guild, channel)`, `voice.leave(guild)` |
+| Play audio | `connection.play_file(path)`, `connection.play_input(input)` |
+| Stop / pause | `connection.stop()`, `connection.pause()`, `connection.resume()` |
+| Write in the channel chat | `voice.say(channel, "hello")` |
+| Move / disconnect / mute / deafen | `voice.move_to(...)`, `voice.disconnect(...)`, `voice.server_mute(...)`, `voice.server_deafen(...)` |
+| Suppress (stage channels) | `voice.suppress(guild, user, channel)` |
+
+The cache is seeded from `GuildCreate` and kept up to date with every
+`VoiceStateUpdate`; it is available as the `VoiceStates` extractor and as
+`ctx.voice_states` inside event handlers.
+
+> **Audio dependencies:** decoding and Opus encoding are provided by
+> [songbird](https://github.com/serenity-rs/songbird). The build compiles libopus
+> through CMake, so you need `cmake` and a C compiler. GitHub runners and most
+> dev machines already have both. Moderation, counting and text chat work
+> without touching audio at all.
+
+`VoiceStateUpdate` handlers need the `GUILD_VOICE_STATES` intent, which is part
+of Lightning's defaults. If you call `.intents(...)`, remember to include it.
 
 ### Sharding
 
@@ -354,9 +401,11 @@ cargo run -p examples-basics
 
 ## Roadmap
 
+- [x] Voice: join, playback, text-in-voice chat and moderation.
 - [ ] Typed autocomplete (`#[autocomplete]`).
 - [ ] Subcommands and groups (`#[subcommand]`).
 - [ ] First-class select menus.
+- [ ] Receiving voice (transcription) and per-user volume.
 - [ ] Sharding through `ShardManager` and `twilight-gateway-queue` (today: own shards).
 - [ ] `lightning dev` with hot reload.
 - [ ] Publishing to crates.io.

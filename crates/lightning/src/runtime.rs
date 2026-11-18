@@ -16,12 +16,14 @@ use twilight_model::application::interaction::message_component::MessageComponen
 use twilight_model::application::interaction::modal::ModalInteractionData;
 use twilight_model::application::interaction::{Interaction, InteractionData, InteractionType};
 use twilight_model::channel::message::Message;
+use twilight_model::gateway::payload::incoming::GuildCreate;
 use twilight_model::id::Id;
 use twilight_model::id::marker::{ApplicationMarker, GuildMarker};
 
 use crate::convert;
 use crate::events::{ComponentHandler, EventContext, EventHandler};
 use crate::responder::{InitialKind, TwilightResponder};
+use crate::voice::Voice;
 
 /// A command plus its already-built middleware layers.
 pub(crate) struct CommandSlot {
@@ -39,6 +41,7 @@ pub(crate) struct Runtime {
     pub state: Arc<StateMap>,
     pub middleware: Arc<[Arc<dyn Middleware>]>,
     pub shard_total: u32,
+    pub voice: Voice,
 }
 
 /// Everything needed to build the runtime.
@@ -50,6 +53,7 @@ pub(crate) struct RuntimeConfig {
     pub state: Arc<StateMap>,
     pub middleware: Vec<Arc<dyn Middleware>>,
     pub shard_total: u32,
+    pub voice: Voice,
 }
 
 impl Runtime {
@@ -62,6 +66,7 @@ impl Runtime {
             state,
             middleware,
             shard_total,
+            voice,
         } = config;
 
         let commands = commands
@@ -81,6 +86,7 @@ impl Runtime {
             state,
             middleware: middleware.into(),
             shard_total,
+            voice,
         }
     }
 
@@ -120,17 +126,36 @@ impl Runtime {
     pub(crate) async fn dispatch(self: &Arc<Self>, event: Event, shard_id: u32) {
         match &event {
             Event::InteractionCreate(created) => {
-                self.clone()
-                    .handle_interaction(created.0.clone(), shard_id)
-                    .await;
+                // Commands are spawned: a handler (for example a voice join)
+                // must never block the shard, or the very events it is waiting
+                // for could not be read.
+                let runtime = Arc::clone(self);
+                let interaction = created.0.clone();
+                tokio::spawn(async move {
+                    runtime.handle_interaction(interaction, shard_id).await;
+                });
             }
             Event::MessageCreate(created) => {
-                self.clone()
-                    .handle_message(created.message.clone(), shard_id)
-                    .await;
+                let runtime = Arc::clone(self);
+                let message = created.message.clone();
+                tokio::spawn(async move {
+                    runtime.handle_message(message, shard_id).await;
+                });
             }
             Event::Ready(ready) => {
+                self.voice.set_user_id(ready.user.id);
                 self.banner(&ready.user.name, ready.guilds.len(), shard_id);
+            }
+            Event::GuildCreate(created) => {
+                if let GuildCreate::Available(guild) = &**created {
+                    self.voice.states().seed(guild.id, &guild.voice_states);
+                }
+            }
+            Event::VoiceStateUpdate(update) => {
+                self.voice.handle_state(&update.0).await;
+            }
+            Event::VoiceServerUpdate(server) => {
+                self.voice.handle_server(server).await;
             }
             _ => {}
         }
@@ -140,6 +165,8 @@ impl Runtime {
             application_id: self.application_id,
             state: Arc::clone(&self.state),
             shard_id,
+            voice: self.voice.clone(),
+            voice_states: self.voice.states().clone(),
         };
 
         for handler in inventory::iter::<EventHandler> {
@@ -483,6 +510,8 @@ impl Runtime {
     fn extras(&self) -> Arc<StateMap> {
         let mut extras = StateMap::new();
         extras.insert_arc(Arc::clone(&self.http));
+        extras.insert(self.voice.clone());
+        extras.insert(self.voice.states().clone());
         Arc::new(extras)
     }
 }
@@ -496,6 +525,9 @@ pub(crate) async fn run_shard(
     total: u32,
 ) {
     let mut shard = Shard::new(ShardId::new(shard_id, total), token, intents);
+
+    // Voice state updates are sent through the shard that owns the guild.
+    runtime.voice.register_shard(shard_id, shard.sender());
 
     loop {
         let Some(item) = shard.next_event(EventTypeFlags::all()).await else {
