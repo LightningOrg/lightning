@@ -744,7 +744,7 @@ dependencies = [
 
 [[package]]
 name = "examples-basics"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "lightning",
  "tokio",
@@ -1835,7 +1835,7 @@ dependencies = [
 
 [[package]]
 name = "lightning"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "dashmap",
@@ -1856,7 +1856,7 @@ dependencies = [
 
 [[package]]
 name = "lightning-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "dashmap",
@@ -1869,7 +1869,7 @@ dependencies = [
 
 [[package]]
 name = "lightning-macros"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "proc-macro2",
  "quote",
