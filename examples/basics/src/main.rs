@@ -119,6 +119,35 @@ async fn fruit_autocomplete(focused: Focused) -> Vec<AutocompleteChoice> {
         .collect()
 }
 
+/// Manage the bot configuration.
+#[command]
+async fn config() -> Reply {
+    Reply::text("Use `/config show` or `/config set greeting`.")
+}
+
+/// Shows the current configuration.
+#[subcommand(command = "config")]
+async fn show() -> Reply {
+    Reply::text("The configuration looks good.")
+}
+
+/// Arguments for `/config set greeting`.
+#[derive(CommandArgs)]
+struct Greeting {
+    /// New greeting text
+    text: String,
+}
+
+/// Changes the greeting.
+#[subcommand(
+    command = "config",
+    group = "set",
+    group_description = "Change settings"
+)]
+async fn greeting(args: Args<Greeting>) -> Reply {
+    Reply::text(format!("Greeting changed to **{}**.", args.text))
+}
+
 /// Shows the current server. Only works in guilds.
 #[command(guild_only)]
 async fn server(ctx: Context) -> Reply {

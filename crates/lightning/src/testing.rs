@@ -88,6 +88,22 @@ pub fn mock_context(command: &'static str) -> (Context, Arc<MockResponder>) {
     (context, responder)
 }
 
+/// Creates a test [`Context`] for a subcommand invocation.
+///
+/// `group` is `None` for direct subcommands and `Some("set")` for
+/// `/command set subcommand`.
+pub fn mock_subcommand_context(
+    command: &'static str,
+    group: Option<&'static str>,
+    subcommand: &'static str,
+) -> (Context, Arc<MockResponder>) {
+    let (mut context, responder) = mock_context(command);
+    context.group = group;
+    context.subcommand = Some(subcommand);
+
+    (context, responder)
+}
+
 /// Creates a test [`Context`] for an autocomplete interaction.
 ///
 /// The returned context has `surface = Autocomplete` and a focused option, so

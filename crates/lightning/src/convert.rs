@@ -3,6 +3,7 @@
 use lightning_core::command::Command;
 use lightning_core::{
     AutocompleteChoice, AutocompleteHandler, ChoiceValue, Error, OptionKind, Reply, Result,
+    Subcommand,
 };
 use serde_json::{Map, Value, json};
 use twilight_model::application::command::{
@@ -23,11 +24,13 @@ use twilight_model::id::Id;
 
 /// Converts framework commands to Discord's model.
 ///
-/// Options with an [`AutocompleteHandler`] are published with
+/// Commands with [`Subcommand`] entries publish those entries as nested
+/// options. Options with an [`AutocompleteHandler`] are published with
 /// `autocomplete: true`, which is what makes Discord send the interaction.
 #[allow(deprecated)]
 pub(crate) fn to_commands<'a>(
     commands: impl Iterator<Item = &'a Command>,
+    subcommands: &[Subcommand],
     autocompletes: &[AutocompleteHandler],
 ) -> Vec<TwilightCommand> {
     commands
@@ -52,27 +55,144 @@ pub(crate) fn to_commands<'a>(
             name: command.name.to_owned(),
             name_localizations: None,
             nsfw: command.nsfw.then_some(true),
-            options: command
-                .options
-                .iter()
-                .map(|spec| to_option(command, spec, autocompletes))
-                .collect(),
+            options: command_options(command, subcommands, autocompletes),
             version: Id::new(1),
         })
         .collect()
 }
 
-fn to_option(
+fn command_options(
     command: &Command,
-    spec: &lightning_core::OptionSpec,
+    subcommands: &[Subcommand],
+    autocompletes: &[AutocompleteHandler],
+) -> Vec<CommandOption> {
+    let children: Vec<&Subcommand> = subcommands
+        .iter()
+        .filter(|subcommand| subcommand.command == command.name)
+        .collect();
+
+    if children.is_empty() {
+        return command
+            .options
+            .iter()
+            .map(|spec| {
+                let autocomplete =
+                    autocomplete_enabled(autocompletes, command.name, None, None, spec);
+                scalar_option(spec, autocomplete)
+            })
+            .collect();
+    }
+
+    let mut options = Vec::new();
+
+    for subcommand in children.iter().filter(|child| child.group.is_none()) {
+        options.push(subcommand_option(command, subcommand, autocompletes));
+    }
+
+    let mut groups: Vec<(&'static str, Vec<&Subcommand>)> = Vec::new();
+    for subcommand in children
+        .iter()
+        .filter_map(|child| child.group.map(|g| (g, *child)))
+    {
+        match groups.iter_mut().find(|(name, _)| *name == subcommand.0) {
+            Some((_, members)) => members.push(subcommand.1),
+            None => groups.push((subcommand.0, vec![subcommand.1])),
+        }
+    }
+
+    for (name, members) in groups {
+        let description = members
+            .iter()
+            .map(|member| member.group_description)
+            .find(|description| !description.is_empty())
+            .map(str::to_owned)
+            .unwrap_or_else(|| humanize(name));
+
+        options.push(CommandOption {
+            autocomplete: None,
+            channel_types: None,
+            choices: None,
+            description,
+            description_localizations: None,
+            file_types: None,
+            kind: CommandOptionType::SubCommandGroup,
+            max_length: None,
+            max_value: None,
+            min_length: None,
+            min_value: None,
+            name: name.to_owned(),
+            name_localizations: None,
+            options: Some(
+                members
+                    .into_iter()
+                    .map(|subcommand| subcommand_option(command, subcommand, autocompletes))
+                    .collect(),
+            ),
+            required: None,
+        });
+    }
+
+    options
+}
+
+fn subcommand_option(
+    command: &Command,
+    subcommand: &Subcommand,
     autocompletes: &[AutocompleteHandler],
 ) -> CommandOption {
+    CommandOption {
+        autocomplete: None,
+        channel_types: None,
+        choices: None,
+        description: if subcommand.description.is_empty() {
+            subcommand.name.to_owned()
+        } else {
+            subcommand.description.to_owned()
+        },
+        description_localizations: None,
+        file_types: None,
+        kind: CommandOptionType::SubCommand,
+        max_length: None,
+        max_value: None,
+        min_length: None,
+        min_value: None,
+        name: subcommand.name.to_owned(),
+        name_localizations: None,
+        options: Some(
+            subcommand
+                .options
+                .iter()
+                .map(|spec| {
+                    let autocomplete = autocomplete_enabled(
+                        autocompletes,
+                        command.name,
+                        subcommand.group,
+                        Some(subcommand.name),
+                        spec,
+                    );
+                    scalar_option(spec, autocomplete)
+                })
+                .collect(),
+        ),
+        required: None,
+    }
+}
+
+fn autocomplete_enabled(
+    autocompletes: &[AutocompleteHandler],
+    command: &str,
+    group: Option<&str>,
+    subcommand: Option<&str>,
+    spec: &lightning_core::OptionSpec,
+) -> bool {
     // Discord only accepts autocomplete on string, integer and number options.
-    let autocomplete = !matches!(spec.kind, OptionKind::Boolean)
+    !matches!(spec.kind, OptionKind::Boolean)
         && autocompletes
             .iter()
-            .any(|handler| handler.matches(command.name, spec.name));
+            .any(|handler| handler.matches(command, group, subcommand, spec.name))
+}
 
+fn scalar_option(spec: &lightning_core::OptionSpec, autocomplete: bool) -> CommandOption {
     CommandOption {
         autocomplete: autocomplete.then_some(true),
         channel_types: None,
@@ -95,6 +215,10 @@ fn to_option(
         options: None,
         required: Some(spec.required),
     }
+}
+
+fn humanize(name: &str) -> String {
+    name.replace(['_', '-'], " ")
 }
 
 pub(crate) fn to_embeds(reply: &Reply) -> Result<Vec<Embed>> {
@@ -222,17 +346,79 @@ fn truncate(text: &str, max: usize) -> String {
     text.chars().take(max).collect()
 }
 
+/// The option the user is typing, with its place inside the command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FocusedOption {
+    pub group: Option<String>,
+    pub subcommand: Option<String>,
+    pub name: String,
+    pub value: String,
+}
+
 /// Finds the option the user is typing, looking through subcommands too.
-pub(crate) fn focused_option(options: &[CommandDataOption]) -> Option<(String, String)> {
+pub(crate) fn focused_option(options: &[CommandDataOption]) -> Option<FocusedOption> {
+    focused_in(options, None, None)
+}
+
+fn focused_in(
+    options: &[CommandDataOption],
+    group: Option<&str>,
+    subcommand: Option<&str>,
+) -> Option<FocusedOption> {
     for option in options {
         match &option.value {
             CommandOptionValue::Focused(value, _) => {
-                return Some((option.name.clone(), value.clone()));
+                return Some(FocusedOption {
+                    group: group.map(str::to_owned),
+                    subcommand: subcommand.map(str::to_owned),
+                    name: option.name.clone(),
+                    value: value.clone(),
+                });
             }
-            CommandOptionValue::SubCommand(inner) | CommandOptionValue::SubCommandGroup(inner) => {
-                if let Some(found) = focused_option(inner) {
+            CommandOptionValue::SubCommand(inner) => {
+                if let Some(found) = focused_in(inner, group, Some(&option.name)) {
                     return Some(found);
                 }
+            }
+            CommandOptionValue::SubCommandGroup(inner) => {
+                if let Some(found) = focused_in(inner, Some(&option.name), subcommand) {
+                    return Some(found);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
+
+/// Subcommand selected by a slash interaction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SubcommandPath {
+    pub group: Option<String>,
+    pub name: String,
+}
+
+/// Finds the subcommand or group/subcommand pair selected by a slash command.
+pub(crate) fn selected_subcommand(options: &[CommandDataOption]) -> Option<SubcommandPath> {
+    for option in options {
+        match &option.value {
+            CommandOptionValue::SubCommand(_) => {
+                return Some(SubcommandPath {
+                    group: None,
+                    name: option.name.clone(),
+                });
+            }
+            CommandOptionValue::SubCommandGroup(inner) => {
+                let name = inner.iter().find_map(|child| {
+                    matches!(child.value, CommandOptionValue::SubCommand(_))
+                        .then(|| child.name.clone())
+                })?;
+
+                return Some(SubcommandPath {
+                    group: Some(option.name.clone()),
+                    name,
+                });
             }
             _ => {}
         }
@@ -325,7 +511,7 @@ pub(crate) fn split_custom_id(custom_id: &str) -> (&str, Option<Map<String, Valu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lightning_core::{ActionRow, Button, Embed as FrameworkEmbed, OptionSpec};
+    use lightning_core::{ActionRow, Button, Embed as FrameworkEmbed, OptionSpec, Subcommand};
 
     static OPTIONS: &[OptionSpec] = &[
         OptionSpec {
@@ -350,6 +536,8 @@ mod tests {
 
     static AUTOCOMPLETE: AutocompleteHandler = AutocompleteHandler {
         command: "echo",
+        group: None,
+        subcommand: None,
         option: "text",
         run: no_choices,
     };
@@ -357,7 +545,7 @@ mod tests {
     #[test]
     fn commands_serialize_the_way_discord_expects() {
         let command = Command::new("echo", "Repeats a text").options(OPTIONS);
-        let converted = to_commands(std::iter::once(&command), &[]);
+        let converted = to_commands(std::iter::once(&command), &[], &[]);
         let json = serde_json::to_value(&converted[0]).unwrap();
 
         assert_eq!(json["name"], "echo");
@@ -372,11 +560,56 @@ mod tests {
     #[test]
     fn options_with_a_handler_are_published_as_autocomplete() {
         let command = Command::new("echo", "Repeats a text").options(OPTIONS);
-        let converted = to_commands(std::iter::once(&command), &[AUTOCOMPLETE]);
+        let converted = to_commands(std::iter::once(&command), &[], &[AUTOCOMPLETE]);
         let json = serde_json::to_value(&converted[0]).unwrap();
 
         assert_eq!(json["options"][0]["autocomplete"], true);
         assert!(json["options"][1]["autocomplete"].is_null());
+    }
+
+    #[test]
+    fn subcommands_and_groups_become_nested_options() {
+        let command = Command::new("config", "Manage configuration").options(OPTIONS);
+        let show = Subcommand::new("config", "show", "Show the configuration");
+        let channel = Subcommand::new("config", "channel", "Change the channel")
+            .group("set", "Change a setting")
+            .options(OPTIONS);
+
+        let converted = to_commands(std::iter::once(&command), &[show, channel], &[]);
+        let json = serde_json::to_value(&converted[0]).unwrap();
+
+        assert_eq!(json["options"][0]["type"], 1);
+        assert_eq!(json["options"][0]["name"], "show");
+        assert_eq!(json["options"][1]["type"], 2);
+        assert_eq!(json["options"][1]["name"], "set");
+        assert_eq!(json["options"][1]["description"], "Change a setting");
+        assert_eq!(json["options"][1]["options"][0]["type"], 1);
+        assert_eq!(json["options"][1]["options"][0]["name"], "channel");
+        assert_eq!(json["options"][1]["options"][0]["options"][0]["type"], 3);
+    }
+
+    #[test]
+    fn subcommand_options_can_autocomplete() {
+        static NESTED: AutocompleteHandler = AutocompleteHandler {
+            command: "config",
+            group: Some("set"),
+            subcommand: Some("channel"),
+            option: "text",
+            run: no_choices,
+        };
+
+        let command = Command::new("config", "Manage configuration");
+        let channel = Subcommand::new("config", "channel", "Change the channel")
+            .group("set", "Change a setting")
+            .options(OPTIONS);
+
+        let converted = to_commands(std::iter::once(&command), &[channel], &[NESTED]);
+        let json = serde_json::to_value(&converted[0]).unwrap();
+
+        assert_eq!(
+            json["options"][0]["options"][0]["options"][0]["autocomplete"],
+            true
+        );
     }
 
     #[test]
@@ -419,7 +652,66 @@ mod tests {
 
         assert_eq!(
             focused_option(&options),
-            Some(("query".to_owned(), "app".to_owned()))
+            Some(FocusedOption {
+                group: None,
+                subcommand: Some("user".to_owned()),
+                name: "query".to_owned(),
+                value: "app".to_owned(),
+            })
+        );
+    }
+
+    #[test]
+    fn finds_the_focused_option_inside_a_group() {
+        let options = vec![CommandDataOption {
+            name: "set".into(),
+            value: CommandOptionValue::SubCommandGroup(vec![CommandDataOption {
+                name: "channel".into(),
+                value: CommandOptionValue::SubCommand(vec![CommandDataOption {
+                    name: "query".into(),
+                    value: CommandOptionValue::Focused("gen".into(), CommandOptionType::String),
+                }]),
+            }]),
+        }];
+
+        assert_eq!(
+            focused_option(&options),
+            Some(FocusedOption {
+                group: Some("set".to_owned()),
+                subcommand: Some("channel".to_owned()),
+                name: "query".to_owned(),
+                value: "gen".to_owned(),
+            })
+        );
+    }
+
+    #[test]
+    fn reads_the_selected_subcommand_and_group() {
+        let direct = vec![CommandDataOption {
+            name: "show".into(),
+            value: CommandOptionValue::SubCommand(Vec::new()),
+        }];
+        assert_eq!(
+            selected_subcommand(&direct),
+            Some(SubcommandPath {
+                group: None,
+                name: "show".to_owned(),
+            })
+        );
+
+        let nested = vec![CommandDataOption {
+            name: "set".into(),
+            value: CommandOptionValue::SubCommandGroup(vec![CommandDataOption {
+                name: "channel".into(),
+                value: CommandOptionValue::SubCommand(Vec::new()),
+            }]),
+        }];
+        assert_eq!(
+            selected_subcommand(&nested),
+            Some(SubcommandPath {
+                group: Some("set".to_owned()),
+                name: "channel".to_owned(),
+            })
         );
     }
 

@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use lightning_core::command::Command;
-use lightning_core::{AutocompleteHandler, Error, Middleware, Result, StateMap};
+use lightning_core::{AutocompleteHandler, Error, Middleware, Result, StateMap, Subcommand};
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
 use twilight_gateway::Intents;
@@ -33,6 +33,7 @@ pub struct Lightning {
     state: StateMap,
     middleware: Vec<Arc<dyn Middleware>>,
     commands: Vec<Command>,
+    subcommands: Vec<Subcommand>,
     guild_id: Option<Id<GuildMarker>>,
     shards: Option<u32>,
     register: bool,
@@ -57,6 +58,7 @@ impl Lightning {
             state: StateMap::new(),
             middleware: Vec::new(),
             commands: Vec::new(),
+            subcommands: Vec::new(),
             guild_id: None,
             shards: None,
             register: true,
@@ -120,6 +122,19 @@ impl Lightning {
         self
     }
 
+    /// Adds a hand-written subcommand (`#[subcommand]` items register
+    /// themselves).
+    pub fn subcommand(mut self, subcommand: Subcommand) -> Self {
+        self.subcommands.push(subcommand);
+        self
+    }
+
+    /// Adds several subcommands.
+    pub fn subcommands(mut self, subcommands: impl IntoIterator<Item = Subcommand>) -> Self {
+        self.subcommands.extend(subcommands);
+        self
+    }
+
     /// Registers slash commands in a specific guild.
     ///
     /// Great for development: changes show up instantly instead of waiting for
@@ -180,6 +195,10 @@ impl Lightning {
             }
         });
 
+        let mut subcommands: Vec<Subcommand> =
+            inventory::iter::<Subcommand>.into_iter().cloned().collect();
+        subcommands.extend(self.subcommands);
+
         let components: Vec<ComponentHandler> = inventory::iter::<ComponentHandler>
             .into_iter()
             .map(|handler| ComponentHandler {
@@ -214,6 +233,7 @@ impl Lightning {
             RuntimeConfig {
                 application_id,
                 commands,
+                subcommands,
                 components,
                 autocompletes,
                 prefix: self.prefix.clone(),

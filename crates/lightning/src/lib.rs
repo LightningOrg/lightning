@@ -50,6 +50,32 @@
 //! }
 //! ```
 //!
+//! # Subcommands
+//!
+//! ```no_run
+//! use lightning::prelude::*;
+//!
+//! /// Manage the bot configuration
+//! #[command]
+//! async fn config() {}
+//!
+//! /// Show the current configuration
+//! #[subcommand(command = "config")]
+//! async fn show() -> Reply {
+//!     Reply::text("everything is fine")
+//! }
+//!
+//! /// Change a setting
+//! #[subcommand(command = "config", group = "set")]
+//! async fn channel() -> Reply {
+//!     Reply::text("channel updated")
+//! }
+//! ```
+//!
+//! Parent options are replaced by subcommands; the parent handler is the prefix
+//! fallback (`!config`). `Context` exposes `group`, `subcommand` and
+//! `command_path()`.
+//!
 //! # Autocomplete
 //!
 //! ```no_run
@@ -109,8 +135,8 @@ pub use lightning_core::{
     Button, ButtonStyle, ChannelId, ChoiceValue, Command, CommandArgs, CommandKind, Context,
     Cooldown, DmOnly, Embed, Error, Extras, Focused, FromContext, FromOptionValue, FromToken,
     Guild, GuildOnly, Interaction, IntoChoices, IntoReply, Member, Message, Middleware, Modal,
-    Next, OptionKind, OptionSpec, Reply, Responder, Result, State, StateMap, Surface, UserId,
-    Values, run_pipeline,
+    Next, OptionKind, OptionSpec, Reply, Responder, Result, State, StateMap, Subcommand, Surface,
+    UserId, Values, run_pipeline,
 };
 
 /// Helpers for the macros (argument errors).
@@ -120,7 +146,9 @@ pub use lightning_core::async_trait;
 /// Re-export of the core middleware module.
 pub use lightning_core::middleware;
 
-pub use lightning_macros::{CommandArgs, autocomplete, command, component, event, main};
+pub use lightning_macros::{
+    CommandArgs, autocomplete, command, component, event, main, subcommand,
+};
 
 #[doc(hidden)]
 pub use inventory;
@@ -158,9 +186,10 @@ pub mod prelude {
     pub use crate::{
         ActionRow, Args, AutocompleteChoice, Button, ButtonStyle, ChoiceValue, Command,
         CommandArgs, CommandKind, Context, Cooldown, Embed, Error, Focused, Lightning, Middleware,
-        Modal, Next, OptionKind, Reply, Result, State, UserId, Voice, VoiceConnection, VoiceStates,
+        Modal, Next, OptionKind, Reply, Result, State, Subcommand, UserId, Voice, VoiceConnection,
+        VoiceStates,
     };
-    pub use crate::{autocomplete, command, component, event};
+    pub use crate::{autocomplete, command, component, event, subcommand};
 }
 
 #[doc(hidden)]

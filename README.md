@@ -20,7 +20,7 @@ async fn ping(ctx: Context) -> Reply {
 That's it. That command already answers both `/ping` and `!ping`, gets registered
 with Discord, and can be tested without a network connection.
 
-> **Status:** alpha (`0.1.2`). The API may change before `1.0`.
+> **Status:** alpha (`0.1.3`). The API may change before `1.0`.
 > Engine: [twilight](https://twilight.rs) `0.18`.
 
 ---
@@ -97,7 +97,7 @@ cargo run -p examples-basics
 On startup you'll see the banner:
 
 ```
-  Lightning v0.1.2
+  Lightning v0.1.3
   ─────────────────────────────────────
   Bot         Lightning#1234
   Servers     3
@@ -158,6 +158,50 @@ async fn echo(args: Args<Echo>) -> Reply {
 
 Supported types: `String`, integers, `f32`/`f64`, `bool`, `char`, `Id<T>`,
 `Option<T>`, `Vec<T>` and `serde_json::Value`.
+
+### Subcommands and groups
+
+Keep one root command and attach handlers with `#[subcommand]`:
+
+```rust
+/// Manage the bot configuration
+#[command]
+async fn config() {
+    // Prefix fallback for `!config`; slash users always pick a subcommand.
+}
+
+/// Show the current configuration
+#[subcommand(command = "config")]
+async fn show() -> Reply {
+    Reply::text("everything is fine")
+}
+
+#[derive(CommandArgs)]
+struct ChannelSetting {
+    /// Channel to use
+    channel: String,
+}
+
+/// Change the output channel
+#[subcommand(command = "config", group = "set", group_description = "Change settings")]
+async fn channel(args: Args<ChannelSetting>) -> Reply {
+    Reply::text(format!("channel set to {}", args.channel))
+}
+```
+
+- `/config show` and `/config set channel channel:#logs` are registered as
+  nested Discord options.
+- Prefix commands use the same path: `!config show` and
+  `!config set channel #logs`.
+- The root handler is only a prefix fallback (`!config`). Slash users always
+  select a subcommand, as Discord requires.
+- A root cannot mix scalar options with subcommands; if it does, Lightning logs
+  a warning at startup and publishes only the subcommands.
+- `ctx.command` is the root (`config`); `ctx.group` and `ctx.subcommand` carry
+  the rest, and `ctx.command_path()` formats the full path.
+- Subcommands accept the same extractors and middleware as normal commands.
+- `Autocomplete` supports nested options with
+  `#[autocomplete(command = "config", group = "set", subcommand = "channel", option = "channel")]`.
 
 ### Autocomplete
 
@@ -420,6 +464,25 @@ No network, no token, no Discord.
 | `middleware` | `middleware = [MyLayer]` | Command-specific layers |
 | `auto_register` | `auto_register = "false"` | Disables auto-registration |
 
+### `#[subcommand]` reference
+
+```rust
+#[subcommand(command = "config", group = "set", group_description = "Change settings")]
+async fn channel(args: Args<ChannelSetting>) -> Reply { /* … */ }
+```
+
+| Field | Description |
+|---|---|
+| `command` | Parent command (**required**) |
+| `group` | Optional subcommand group (`set`) |
+| `group_description` | Description of the group; defaults to the group name |
+| `name` | Subcommand name; defaults to the function name |
+| `description` | Falls back to the doc comment |
+| `aliases` | Prefix aliases |
+| `middleware` | Subcommand-specific layers |
+
+Handlers are registered automatically with `inventory`; you never list them.
+
 ### `#[autocomplete]` reference
 
 ```rust
@@ -430,6 +493,8 @@ async fn fruits(focused: Focused) -> Vec<AutocompleteChoice> { /* … */ }
 | Field | Description |
 |---|---|
 | `command` | Name of the command that owns the option |
+| `group` | Group of the subcommand, if the option is nested |
+| `subcommand` | Subcommand that owns the option, if nested |
 | `option` | Name of the option to autocomplete |
 
 Handlers are registered automatically with `inventory`; you never list them.
@@ -462,7 +527,7 @@ cargo run -p examples-basics
 
 - [x] Voice: join, playback, text-in-voice chat and moderation.
 - [x] Typed autocomplete (`#[autocomplete]`).
-- [ ] Subcommands and groups (`#[subcommand]`).
+- [x] Subcommands and groups (`#[subcommand]`).
 - [ ] First-class select menus.
 - [ ] Receiving voice (transcription) and per-user volume.
 - [ ] Sharding through `ShardManager` and `twilight-gateway-queue` (today: own shards).

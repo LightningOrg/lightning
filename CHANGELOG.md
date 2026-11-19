@@ -4,6 +4,31 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.3] - 2026-11-19
+
+Subcommands and groups.
+
+### Added
+
+- `#[subcommand(command = "...")]` and optional groups with
+  `group = "..."` / `group_description = "..."`.
+- `Subcommand` model and `inventory` registration, plus `.subcommand(...)` and
+  `.subcommands(...)` on `Lightning` for hand-written commands.
+- Nested slash command registration and routing for direct subcommands and
+  one level of groups.
+- Prefix routing through the same path (`!config set channel ...`), with the
+  parent handler as a fallback for `!config`.
+- `Context.group`, `Context.subcommand` and `Context.command_path()`.
+- Autocomplete for subcommand options with `group` and `subcommand` in
+  `#[autocomplete]`.
+- `mock_subcommand_context` test helper.
+
+### Changed
+
+- `AutocompleteHandler` now carries the optional group and subcommand path.
+- Slash commands with subcommands no longer publish their own scalar options;
+  Lightning logs a warning when a parent mixes both.
+
 ## [0.1.2] - 2026-11-19
 
 ### Added

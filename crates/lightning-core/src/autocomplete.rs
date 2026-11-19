@@ -29,6 +29,14 @@
 //! }
 //! ```
 //!
+//! Options inside subcommands and groups are addressed with `group` and
+//! `subcommand` in addition to `command` and `option`:
+//!
+//! ```ignore
+//! #[autocomplete(command = "config", group = "set", subcommand = "channel", option = "channel")]
+//! async fn channels(focused: Focused) -> Vec<AutocompleteChoice> { /* … */ }
+//! ```
+//!
 //! Handlers only run for slash commands: autocomplete does not exist on the
 //! prefix surface. They also skip the middleware pipeline, so they stay fast.
 
@@ -275,6 +283,10 @@ pub type AutocompleteFn = for<'a> fn(&'a Context) -> BoxFuture<'a, Result<Vec<Au
 pub struct AutocompleteHandler {
     /// Command name without the slash (`search`).
     pub command: &'static str,
+    /// Subcommand group, when the option lives inside one (`set`).
+    pub group: Option<&'static str>,
+    /// Subcommand name, when the option lives inside one (`channel`).
+    pub subcommand: Option<&'static str>,
     /// Option name inside that command (`query`).
     pub option: &'static str,
     /// Function that produces the choices.
@@ -285,15 +297,26 @@ impl std::fmt::Debug for AutocompleteHandler {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AutocompleteHandler")
             .field("command", &self.command)
+            .field("group", &self.group)
+            .field("subcommand", &self.subcommand)
             .field("option", &self.option)
             .finish_non_exhaustive()
     }
 }
 
 impl AutocompleteHandler {
-    /// `true` if this handler answers `command` + `option`.
-    pub fn matches(&self, command: &str, option: &str) -> bool {
-        self.command == command && self.option == option
+    /// `true` if this handler answers this command path and option.
+    pub fn matches(
+        &self,
+        command: &str,
+        group: Option<&str>,
+        subcommand: Option<&str>,
+        option: &str,
+    ) -> bool {
+        self.command == command
+            && self.group == group
+            && self.subcommand == subcommand
+            && self.option == option
     }
 }
 
