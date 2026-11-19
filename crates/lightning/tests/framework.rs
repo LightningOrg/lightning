@@ -159,6 +159,104 @@ fn focused_parses_typed_values() {
     assert!(focused.parse::<bool>().is_err());
 }
 
+/// Manage the bot configuration.
+#[command]
+async fn config() -> Reply {
+    Reply::text("use /config show or /config set channel")
+}
+
+/// Show the current configuration.
+#[subcommand(command = "config")]
+async fn config_show() -> Reply {
+    Reply::text("shown")
+}
+
+#[derive(CommandArgs)]
+struct ChannelSetting {
+    /// Channel to use
+    channel: String,
+}
+
+/// Change the output channel.
+#[subcommand(
+    command = "config",
+    group = "set",
+    group_description = "Change settings"
+)]
+async fn config_set_channel(args: Args<ChannelSetting>) -> Reply {
+    Reply::text(format!("channel: {}", args.channel))
+}
+
+#[autocomplete(
+    command = "config",
+    group = "set",
+    subcommand = "channel",
+    option = "channel"
+)]
+async fn config_channel_autocomplete(focused: Focused) -> Vec<AutocompleteChoice> {
+    ["general", "logs"]
+        .into_iter()
+        .filter(|channel| channel.contains(&focused.value))
+        .map(|channel| AutocompleteChoice::text(channel, channel))
+        .collect()
+}
+
+#[test]
+fn subcommands_are_registered_with_their_group() {
+    let direct = lightning::inventory::iter::<Subcommand>
+        .into_iter()
+        .find(|subcommand| subcommand.command == "config" && subcommand.name == "config_show")
+        .expect("the show subcommand should be registered");
+    assert_eq!(direct.group, None);
+
+    let grouped = lightning::inventory::iter::<Subcommand>
+        .into_iter()
+        .find(|subcommand| {
+            subcommand.command == "config" && subcommand.name == "config_set_channel"
+        })
+        .expect("the grouped subcommand should be registered");
+    assert_eq!(grouped.group, Some("set"));
+    assert_eq!(grouped.group_description, "Change settings");
+    assert_eq!(grouped.options[0].name, "channel");
+}
+
+#[tokio::test]
+async fn subcommand_handlers_run_with_the_full_context() {
+    let subcommand = lightning::inventory::iter::<Subcommand>
+        .into_iter()
+        .find(|subcommand| subcommand.command == "config" && subcommand.name == "config_show")
+        .cloned()
+        .expect("the show subcommand should be registered");
+
+    let (ctx, responder) =
+        lightning::testing::mock_subcommand_context("config", None, "config_show");
+    assert_eq!(ctx.command_path(), "config config_show");
+
+    let reply = (subcommand.run().expect("it has a handler"))(&ctx)
+        .await
+        .unwrap();
+    ctx.reply(reply).await.unwrap();
+
+    assert_eq!(responder.last().unwrap().content.as_deref(), Some("shown"));
+}
+
+#[tokio::test]
+async fn autocomplete_handlers_match_subcommand_options() {
+    let handler = lightning::inventory::iter::<lightning::AutocompleteHandler>
+        .into_iter()
+        .find(|handler| handler.matches("config", Some("set"), Some("channel"), "channel"))
+        .copied()
+        .expect("the nested autocomplete handler should be registered");
+
+    let (mut ctx, _) = lightning::testing::mock_autocomplete_context("config", "channel", "gen");
+    ctx.group = Some("set");
+    ctx.subcommand = Some("channel");
+
+    let choices = (handler.run)(&ctx).await.unwrap();
+    let names: Vec<&str> = choices.iter().map(|choice| choice.name.as_str()).collect();
+    assert_eq!(names, vec!["general"]);
+}
+
 #[tokio::test]
 async fn cooldown_blocks_the_second_call() {
     let cooldown: Arc<dyn Middleware> = Arc::new(Cooldown::per_user(Duration::from_secs(60)));

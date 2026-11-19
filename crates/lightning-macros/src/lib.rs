@@ -3,6 +3,7 @@
 //! The macros that make Lightning feel like magic:
 //!
 //! - `#[command]` — turns an async function into a slash **and** prefix command.
+//! - `#[subcommand]` — nests a command inside another one, optionally in a group.
 //! - `#[autocomplete]` — serves typed suggestions for one slash command option.
 //! - `#[component]` — routes buttons, menus and modals by `custom_id`.
 //! - `#[event]` — subscribes a handler to a Gateway event.
@@ -36,6 +37,36 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     match expand_command(cfg, function) {
+        Ok(tokens) => tokens.into(),
+        Err(error) => error.to_compile_error().into(),
+    }
+}
+
+/// Marks a function as a subcommand of another command.
+///
+/// ```ignore
+/// # use lightning::prelude::*;
+/// /// Manage the bot configuration
+/// #[command]
+/// async fn config() {}
+///
+/// /// Show the current configuration
+/// #[subcommand(command = "config")]
+/// async fn show() -> Reply {
+///     Reply::text("everything is fine")
+/// }
+///
+/// /// Change a setting
+/// #[subcommand(command = "config", group = "set", group_description = "Change a setting")]
+/// async fn channel(ctx: Context) -> Reply {
+///     Reply::text("setting updated")
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn subcommand(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let function = parse_macro_input!(item as ItemFn);
+
+    match expand_subcommand(attr.into(), function) {
         Ok(tokens) => tokens.into(),
         Err(error) => error.to_compile_error().into(),
     }
@@ -327,8 +358,150 @@ fn expand_command(cfg: CommandAttr, function: ItemFn) -> syn::Result<TokenStream
     })
 }
 
-/// Pieces shared by the `#[command]`, `#[component]` and `#[autocomplete]`
-/// runners: how to obtain each parameter from the `Context`.
+// ---------------------------------------------------------------------------
+// #[subcommand]
+// ---------------------------------------------------------------------------
+
+#[derive(Default)]
+struct SubcommandAttr {
+    command: Option<String>,
+    group: Option<String>,
+    group_description: Option<String>,
+    name: Option<String>,
+    description: Option<String>,
+    aliases: Vec<String>,
+    middleware: Vec<Expr>,
+}
+
+impl SubcommandAttr {
+    fn parse(tokens: TokenStream2, function: &ItemFn) -> syn::Result<Self> {
+        let mut cfg = Self::default();
+        let attr: Attribute = syn::parse_quote!(#[subcommand(#tokens)]);
+
+        if !tokens.is_empty() {
+            attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("command") {
+                    cfg.command = Some(meta.value()?.parse::<LitStr>()?.value());
+                    return Ok(());
+                }
+                if meta.path.is_ident("group") {
+                    cfg.group = Some(meta.value()?.parse::<LitStr>()?.value());
+                    return Ok(());
+                }
+                if meta.path.is_ident("group_description") {
+                    cfg.group_description = Some(meta.value()?.parse::<LitStr>()?.value());
+                    return Ok(());
+                }
+                if meta.path.is_ident("name") {
+                    cfg.name = Some(meta.value()?.parse::<LitStr>()?.value());
+                    return Ok(());
+                }
+                if meta.path.is_ident("description") {
+                    cfg.description = Some(meta.value()?.parse::<LitStr>()?.value());
+                    return Ok(());
+                }
+                if meta.path.is_ident("aliases") {
+                    cfg.aliases = string_array(meta.value()?.parse::<Expr>()?)?;
+                    return Ok(());
+                }
+                if meta.path.is_ident("middleware") {
+                    cfg.middleware = expr_array(meta.value()?.parse::<Expr>()?)?;
+                    return Ok(());
+                }
+
+                Err(meta.error(
+                    "unknown attribute: use command, group, group_description, name, description, aliases or middleware",
+                ))
+            })?;
+        }
+
+        if cfg.command.is_none() {
+            return Err(syn::Error::new_spanned(
+                &function.sig,
+                "`#[subcommand]` requires `command = \"...\"`",
+            ));
+        }
+        if cfg.group.is_none() && cfg.group_description.is_some() {
+            return Err(syn::Error::new_spanned(
+                &function.sig,
+                "`group_description` requires `group = \"...\"`",
+            ));
+        }
+        if cfg.description.is_none() {
+            cfg.description = doc_comment(&function.attrs);
+        }
+
+        Ok(cfg)
+    }
+}
+
+fn expand_subcommand(tokens: TokenStream2, function: ItemFn) -> syn::Result<TokenStream2> {
+    let cfg = SubcommandAttr::parse(tokens, &function)?;
+    let fn_name = &function.sig.ident;
+    let command = cfg.command.clone().expect("validated by SubcommandAttr");
+    let name = cfg.name.clone().unwrap_or_else(|| fn_name.to_string());
+    let description = cfg.description.clone().unwrap_or_default();
+
+    let command_lit = LitStr::new(&command, fn_name.span());
+    let name_lit = LitStr::new(&name, fn_name.span());
+    let description_lit = LitStr::new(&description, fn_name.span());
+    let run_ident = format_ident!("__lightning_subcommand_{}", fn_name);
+    let (run_fn, args_ty) = generate_runner(&run_ident, &function)?;
+
+    let mut builder = quote! {
+        ::lightning::Subcommand::new(#command_lit, #name_lit, #description_lit)
+            .options(<#args_ty as ::lightning::CommandArgs>::OPTIONS)
+            .handler(#run_ident)
+    };
+
+    if let Some(group) = &cfg.group {
+        let group_lit = LitStr::new(group, fn_name.span());
+        let group_description = cfg.group_description.clone().unwrap_or_default();
+        let group_description_lit = LitStr::new(&group_description, fn_name.span());
+        builder.extend(quote! { .group(#group_lit, #group_description_lit) });
+    }
+
+    if !cfg.aliases.is_empty() {
+        let aliases = cfg
+            .aliases
+            .iter()
+            .map(|alias| LitStr::new(alias, fn_name.span()));
+        builder.extend(quote! { .aliases(&[#(#aliases),*]) });
+    }
+
+    if !cfg.middleware.is_empty() {
+        let layers_ident = format_ident!("__lightning_subcommand_layers_{}", fn_name);
+        builder.extend(quote! { .layers(#layers_ident) });
+
+        let expressions = &cfg.middleware;
+        let layers = quote! {
+            #[allow(non_snake_case)]
+            fn #layers_ident() -> ::std::vec::Vec<::std::sync::Arc<dyn ::lightning::Middleware>> {
+                ::std::vec![
+                    #(::std::sync::Arc::new(#expressions) as ::std::sync::Arc<dyn ::lightning::Middleware>),*,
+                ]
+            }
+        };
+
+        return Ok(quote! {
+            #function
+            #run_fn
+            #layers
+
+            ::lightning::inventory::submit! { #builder }
+        });
+    }
+
+    Ok(quote! {
+        #function
+        #run_fn
+
+        ::lightning::inventory::submit! { #builder }
+    })
+}
+
+/// Pieces shared by the `#[command]`, `#[subcommand]`, `#[component]` and
+/// `#[autocomplete]` runners: how to obtain each parameter from the `Context`.
 struct RunnerParts {
     extractions: Vec<TokenStream2>,
     call_args: Vec<TokenStream2>,
@@ -410,6 +583,8 @@ fn generate_runner(
 #[derive(Default)]
 struct AutocompleteAttr {
     command: Option<String>,
+    group: Option<String>,
+    subcommand: Option<String>,
     option: Option<String>,
 }
 
@@ -423,13 +598,28 @@ impl AutocompleteAttr {
                 cfg.command = Some(meta.value()?.parse::<LitStr>()?.value());
                 return Ok(());
             }
+            if meta.path.is_ident("group") {
+                cfg.group = Some(meta.value()?.parse::<LitStr>()?.value());
+                return Ok(());
+            }
+            if meta.path.is_ident("subcommand") {
+                cfg.subcommand = Some(meta.value()?.parse::<LitStr>()?.value());
+                return Ok(());
+            }
             if meta.path.is_ident("option") {
                 cfg.option = Some(meta.value()?.parse::<LitStr>()?.value());
                 return Ok(());
             }
 
-            Err(meta.error("unknown attribute: use command = \"...\" and option = \"...\""))
+            Err(meta.error("unknown attribute: use command, group, subcommand and option"))
         })?;
+
+        if cfg.group.is_some() && cfg.subcommand.is_none() {
+            return Err(syn::Error::new_spanned(
+                &attr,
+                "`group` requires `subcommand = \"...\"`",
+            ));
+        }
 
         Ok(cfg)
     }
@@ -454,6 +644,20 @@ fn expand_autocomplete(tokens: TokenStream2, function: ItemFn) -> syn::Result<To
 
     let command_lit = LitStr::new(&command, fn_name.span());
     let option_lit = LitStr::new(&option, fn_name.span());
+    let group = match &cfg.group {
+        Some(group) => {
+            let group_lit = LitStr::new(group, fn_name.span());
+            quote!(::std::option::Option::Some(#group_lit))
+        }
+        None => quote!(::std::option::Option::None),
+    };
+    let subcommand = match &cfg.subcommand {
+        Some(subcommand) => {
+            let subcommand_lit = LitStr::new(subcommand, fn_name.span());
+            quote!(::std::option::Option::Some(#subcommand_lit))
+        }
+        None => quote!(::std::option::Option::None),
+    };
     let run_ident = format_ident!("__lightning_autocomplete_{}", fn_name);
     let RunnerParts {
         extractions,
@@ -482,6 +686,8 @@ fn expand_autocomplete(tokens: TokenStream2, function: ItemFn) -> syn::Result<To
         ::lightning::inventory::submit! {
             ::lightning::AutocompleteHandler {
                 command: #command_lit,
+                group: #group,
+                subcommand: #subcommand,
                 option: #option_lit,
                 run: #run_ident,
             }

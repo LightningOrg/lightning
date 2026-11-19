@@ -16,8 +16,8 @@ here to work on the code, start here.
 │   │   Responder (trait) · StateMap · Error               │  │
 │   └──────────────────────────────────────────────────────┘  │
 │   lightning-macros       (procedural macros)                │
-│   #[command] #[autocomplete] #[event] #[component] #[main]  │
-│   derive(CommandArgs)                                       │
+│   #[command] #[subcommand] #[autocomplete] #[event]         │
+│   #[component] #[main] derive(CommandArgs)                  │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -188,13 +188,37 @@ through `inventory`, just like a command. Two things follow from that:
   matching options with `autocomplete: true`. The user does not repeat the
   option metadata anywhere.
 - At runtime, an `ApplicationCommandAutocomplete` interaction is routed by
-  `(command name, focused option name)` to the handler. The handler receives a
-  `Context` with `surface = Autocomplete` and the `Focused` extractor, and its
-  choices are converted to Discord's `CommandOptionChoice` model.
+  `(command name, group, subcommand, focused option)` to the handler. The
+  handler receives a `Context` with `surface = Autocomplete` and the `Focused`
+  extractor, and its choices are converted to Discord's `CommandOptionChoice`
+  model.
 
 Autocomplete deliberately bypasses the middleware pipeline: it fires on every
 keystroke and a cooldown would be both wrong and annoying. Responses are capped
 at 25 choices and names/values at 100 characters before they reach Discord.
+
+### 9. Subcommands are nested inventory entries
+
+`#[subcommand]` emits a separate `Subcommand` entry (parent command, optional
+group, name, options and handler) through `inventory`. The parent remains a
+normal `#[command]`; there is no list of children to maintain.
+
+Two conversions happen at boundaries:
+
+- At registration, `convert::to_commands` groups the entries under their parent
+  and publishes Discord's nested `SUB_COMMAND_GROUP` / `SUB_COMMAND` options.
+  Scalar options of the parent are ignored when it has subcommands, because
+  Discord rejects that mix.
+- At runtime, slash interactions are routed by the selected
+  `(group, subcommand)` path and prefix messages by the first one or two tokens
+  after the root (`!config set channel …`). The chosen entry supplies the
+  handler and its middleware layers; the parent supplies `guild_only`.
+
+The parent handler is a prefix-only fallback (`!config`); slash commands always
+require a subcommand. `Context.command` stays the root name, while
+`Context.group`, `Context.subcommand` and `Context.command_path()` expose the
+rest. Autocomplete entries carry the same path, so identical option names in
+different subcommands do not collide.
 
 ## The life of a response
 
@@ -209,7 +233,8 @@ at 25 choices and names/values at 100 characters before they reach Discord.
 
 ## Known limits (MVP)
 
-- Subcommands: routing exists for flat options; groups are flattened.
+- Subcommands: one group level, matching Discord's limit; a parent cannot mix
+  its own options with subcommands.
 - Sharding: own shards, no `ShardManager` or coordinated queue.
 - Voice: receiving audio (voice transcription) is not implemented, only
   playback and moderation; audio requires `cmake` to build libopus.

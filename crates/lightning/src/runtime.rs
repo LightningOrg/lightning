@@ -6,7 +6,7 @@ use lightning_core::command::Command;
 use lightning_core::context::Surface;
 use lightning_core::middleware::{self, Middleware};
 use lightning_core::{
-    AutocompleteHandler, Context, Error, Focused, OptionKind, Reply, Result, StateMap,
+    AutocompleteHandler, Context, Error, Focused, OptionKind, Reply, Result, StateMap, Subcommand,
 };
 use serde_json::Map;
 use tracing::{debug, info, warn};
@@ -33,11 +33,18 @@ pub(crate) struct CommandSlot {
     layers: Arc<[Arc<dyn Middleware>]>,
 }
 
+/// A subcommand plus its already-built middleware layers.
+pub(crate) struct SubcommandSlot {
+    subcommand: Subcommand,
+    layers: Arc<[Arc<dyn Middleware>]>,
+}
+
 /// State shared by every shard.
 pub(crate) struct Runtime {
     pub http: Arc<Client>,
     pub application_id: Id<ApplicationMarker>,
     pub commands: Vec<CommandSlot>,
+    pub subcommands: Vec<SubcommandSlot>,
     pub components: Vec<ComponentHandler>,
     pub autocompletes: Vec<AutocompleteHandler>,
     pub prefix: Option<String>,
@@ -51,6 +58,7 @@ pub(crate) struct Runtime {
 pub(crate) struct RuntimeConfig {
     pub application_id: Id<ApplicationMarker>,
     pub commands: Vec<Command>,
+    pub subcommands: Vec<Subcommand>,
     pub components: Vec<ComponentHandler>,
     pub autocompletes: Vec<AutocompleteHandler>,
     pub prefix: Option<String>,
@@ -65,6 +73,7 @@ impl Runtime {
         let RuntimeConfig {
             application_id,
             commands,
+            subcommands,
             components,
             autocompletes,
             prefix,
@@ -73,6 +82,19 @@ impl Runtime {
             shard_total,
             voice,
         } = config;
+
+        for command in &commands {
+            let has_children = subcommands
+                .iter()
+                .any(|subcommand| subcommand.command == command.name);
+
+            if has_children && !command.options.is_empty() {
+                warn!(
+                    command = command.name,
+                    "the command mixes its own options with subcommands; Discord does not allow that, so the options are ignored"
+                );
+            }
+        }
 
         for handler in &autocompletes {
             let Some(command) = commands
@@ -96,11 +118,48 @@ impl Runtime {
                 continue;
             }
 
-            match command
-                .options
-                .iter()
-                .find(|option| option.name == handler.option)
-            {
+            if handler.group.is_some() && handler.subcommand.is_none() {
+                warn!(
+                    command = handler.command,
+                    option = handler.option,
+                    "an autocomplete group requires a subcommand"
+                );
+                continue;
+            }
+
+            let options = if let Some(name) = handler.subcommand {
+                match subcommands
+                    .iter()
+                    .find(|subcommand| subcommand.matches(handler.command, handler.group, name))
+                {
+                    Some(subcommand) => subcommand.options,
+                    None => {
+                        warn!(
+                            command = handler.command,
+                            group = handler.group.unwrap_or("-"),
+                            subcommand = name,
+                            option = handler.option,
+                            "autocomplete handler points to an unknown subcommand"
+                        );
+                        continue;
+                    }
+                }
+            } else {
+                if subcommands
+                    .iter()
+                    .any(|subcommand| subcommand.command == command.name)
+                {
+                    warn!(
+                        command = handler.command,
+                        option = handler.option,
+                        "autocomplete handler points to a parent option, but the command only exposes subcommands"
+                    );
+                    continue;
+                }
+                command.options
+            };
+
+            match options.iter().find(|option| option.name == handler.option) {
                 None => warn!(
                     command = handler.command,
                     option = handler.option,
@@ -115,7 +174,7 @@ impl Runtime {
             }
         }
 
-        let commands = commands
+        let commands: Vec<CommandSlot> = commands
             .into_iter()
             .map(|command| {
                 let layers: Arc<[Arc<dyn Middleware>]> = command.build_layers().into();
@@ -123,10 +182,42 @@ impl Runtime {
             })
             .collect();
 
+        let mut seen = std::collections::HashSet::new();
+        let subcommands = subcommands
+            .into_iter()
+            .filter_map(|subcommand| {
+                if !commands
+                    .iter()
+                    .any(|slot| slot.command.name == subcommand.command)
+                {
+                    warn!(
+                        command = subcommand.command,
+                        subcommand = subcommand.name,
+                        "subcommand points to an unknown command"
+                    );
+                    return None;
+                }
+
+                if !seen.insert((subcommand.command, subcommand.group, subcommand.name)) {
+                    warn!(
+                        command = subcommand.command,
+                        group = subcommand.group.unwrap_or("-"),
+                        subcommand = subcommand.name,
+                        "duplicate subcommand, skipping"
+                    );
+                    return None;
+                }
+
+                let layers: Arc<[Arc<dyn Middleware>]> = subcommand.build_layers().into();
+                Some(SubcommandSlot { subcommand, layers })
+            })
+            .collect();
+
         Self {
             http,
             application_id,
             commands,
+            subcommands,
             components,
             autocompletes,
             prefix,
@@ -139,8 +230,14 @@ impl Runtime {
 
     /// Publishes the slash commands to Discord.
     pub(crate) async fn register(&self, guild_id: Option<Id<GuildMarker>>) -> Result<()> {
+        let subcommands: Vec<Subcommand> = self
+            .subcommands
+            .iter()
+            .map(|slot| slot.subcommand.clone())
+            .collect();
         let commands = convert::to_commands(
             self.commands.iter().map(|slot| &slot.command),
+            &subcommands,
             &self.autocompletes,
         );
 
@@ -307,7 +404,7 @@ impl Runtime {
             return;
         };
 
-        let Some((option, value)) = convert::focused_option(&data.options) else {
+        let Some(focused) = convert::focused_option(&data.options) else {
             debug!(command = %data.name, "autocomplete without a focused option");
             self.respond_raw(&interaction, convert::autocomplete(&[]))
                 .await;
@@ -317,13 +414,20 @@ impl Runtime {
         let handler = self
             .autocompletes
             .iter()
-            .find(|handler| handler.matches(&data.name, &option))
+            .find(|handler| {
+                handler.matches(
+                    &data.name,
+                    focused.group.as_deref(),
+                    focused.subcommand.as_deref(),
+                    &focused.name,
+                )
+            })
             .copied();
 
         let Some(handler) = handler else {
             debug!(
                 command = %data.name,
-                option = %option,
+                option = %focused.name,
                 "no autocomplete handler for this option"
             );
             self.respond_raw(&interaction, convert::autocomplete(&[]))
@@ -342,7 +446,9 @@ impl Runtime {
         ) else {
             return;
         };
-        ctx.focused = Some(Focused::new(option, value));
+        ctx.group = handler.group;
+        ctx.subcommand = handler.subcommand;
+        ctx.focused = Some(Focused::new(focused.name, focused.value));
 
         let choices = match (handler.run)(&ctx).await {
             Ok(choices) => choices,
@@ -372,8 +478,35 @@ impl Runtime {
             return;
         };
 
+        let has_subcommands = self
+            .subcommands
+            .iter()
+            .any(|subcommand| subcommand.subcommand.command == slot.command.name);
+        let path = convert::selected_subcommand(&data.options);
+
+        let selected = if has_subcommands {
+            let Some(path) = path else {
+                self.reject(&interaction, "choose a subcommand for this command.")
+                    .await;
+                return;
+            };
+
+            let selected =
+                self.find_subcommand(slot.command.name, path.group.as_deref(), &path.name);
+
+            let Some(selected) = selected else {
+                self.reject(&interaction, "that subcommand does not exist.")
+                    .await;
+                return;
+            };
+
+            Some(selected)
+        } else {
+            None
+        };
+
         let options = Some(convert::option_map(&data.options));
-        let Some(ctx) = self.interaction_context(
+        let Some(mut ctx) = self.interaction_context(
             &interaction,
             slot.command.name,
             Surface::Slash,
@@ -384,7 +517,24 @@ impl Runtime {
             return;
         };
 
-        self.execute(slot, ctx).await;
+        if let Some(subcommand) = selected {
+            ctx.group = subcommand.subcommand.group;
+            ctx.subcommand = Some(subcommand.subcommand.name);
+            self.execute_subcommand(slot, subcommand, ctx).await;
+        } else {
+            self.execute(slot, ctx).await;
+        }
+    }
+
+    fn find_subcommand(
+        &self,
+        command: &str,
+        group: Option<&str>,
+        name: &str,
+    ) -> Option<&SubcommandSlot> {
+        self.subcommands
+            .iter()
+            .find(|slot| slot.subcommand.matches(command, group, name))
     }
 
     async fn component(
@@ -471,6 +621,8 @@ impl Runtime {
 
         Some(Context {
             command,
+            group: None,
+            subcommand: None,
             surface,
             user,
             member: interaction.member.clone(),
@@ -505,6 +657,8 @@ impl Runtime {
 
         let context = Context {
             command: "reject",
+            group: None,
+            subcommand: None,
             surface: Surface::Slash,
             user: user.clone(),
             member: interaction.member.clone(),
@@ -558,14 +712,29 @@ impl Runtime {
             return;
         };
 
+        let has_subcommands = self
+            .subcommands
+            .iter()
+            .any(|subcommand| subcommand.subcommand.command == slot.command.name);
+        let (selected, consumed) = if has_subcommands {
+            match self.find_prefix_subcommand(slot.command.name, args) {
+                Some((subcommand, consumed)) => (Some(subcommand), consumed),
+                None => (None, 0),
+            }
+        } else {
+            (None, 0)
+        };
+
         let channel_id = message.channel_id;
         let responder = Arc::new(TwilightResponder::channel(
             Arc::clone(&self.http),
             channel_id,
         ));
 
-        let ctx = Context {
+        let mut ctx = Context {
             command: slot.command.name,
+            group: None,
+            subcommand: None,
             surface: Surface::Prefix,
             user: message.author.clone(),
             member: message.member.clone(),
@@ -576,7 +745,7 @@ impl Runtime {
             message: Some(message),
             options: None,
             focused: None,
-            tokens: args.to_vec(),
+            tokens: args[consumed..].to_vec(),
             values: Vec::new(),
             shard_id: 0,
             responder,
@@ -584,7 +753,29 @@ impl Runtime {
             extras: self.extras(),
         };
 
-        self.execute(slot, ctx).await;
+        if let Some(subcommand) = selected {
+            ctx.group = subcommand.subcommand.group;
+            ctx.subcommand = Some(subcommand.subcommand.name);
+            self.execute_subcommand(slot, subcommand, ctx).await;
+        } else {
+            self.execute(slot, ctx).await;
+        }
+    }
+
+    fn find_prefix_subcommand<'a>(
+        &'a self,
+        command: &str,
+        tokens: &[String],
+    ) -> Option<(&'a SubcommandSlot, usize)> {
+        let first = tokens.first()?;
+
+        if let Some(subcommand) = self.find_subcommand(command, None, first) {
+            return Some((subcommand, 1));
+        }
+
+        let second = tokens.get(1)?;
+        self.find_subcommand(command, Some(first), second)
+            .map(|subcommand| (subcommand, 2))
     }
 
     // -----------------------------------------------------------------------
@@ -592,18 +783,38 @@ impl Runtime {
     // -----------------------------------------------------------------------
 
     async fn execute(self: &Arc<Self>, slot: &CommandSlot, ctx: Context) {
-        if slot.command.guild_only && ctx.guild_id.is_none() {
+        self.execute_with(&slot.command, slot.command.run(), &slot.layers, ctx)
+            .await;
+    }
+
+    async fn execute_subcommand(
+        self: &Arc<Self>,
+        parent: &CommandSlot,
+        slot: &SubcommandSlot,
+        ctx: Context,
+    ) {
+        self.execute_with(&parent.command, slot.subcommand.run(), &slot.layers, ctx)
+            .await;
+    }
+
+    async fn execute_with(
+        self: &Arc<Self>,
+        command: &Command,
+        run: Option<lightning_core::command::RunFn>,
+        layers: &[Arc<dyn Middleware>],
+        ctx: Context,
+    ) {
+        if command.guild_only && ctx.guild_id.is_none() {
             let _ = ctx.reply(Error::GuildOnly.to_reply()).await;
             return;
         }
 
-        let Some(run) = slot.command.run() else {
-            warn!(command = %slot.command.name, "the command has no handler");
+        let Some(run) = run else {
+            warn!(command = %ctx.command_path(), "the command has no handler");
             return;
         };
 
-        let reply =
-            middleware::run_pipeline(&self.middleware, &slot.layers, run, ctx.clone()).await;
+        let reply = middleware::run_pipeline(&self.middleware, layers, run, ctx.clone()).await;
 
         self.reply_to(ctx, reply).await;
     }
@@ -612,7 +823,7 @@ impl Runtime {
         let reply = match reply {
             Ok(reply) => reply,
             Err(error) => {
-                warn!(command = %ctx.command, %error, "the handler failed");
+                warn!(command = %ctx.command_path(), %error, "the handler failed");
                 error.to_reply()
             }
         };
@@ -691,7 +902,16 @@ pub(crate) fn tokenize(input: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::tokenize;
+    use std::sync::Arc;
+
+    use lightning_core::command::Command;
+    use lightning_core::{StateMap, Subcommand};
+    use twilight_http::Client;
+    use twilight_model::id::Id;
+
+    use super::{Runtime, RuntimeConfig, tokenize};
+    use crate::voice::Voice;
+    use crate::voice_states::VoiceStates;
 
     #[test]
     fn tokenizes_while_respecting_quotes() {
@@ -701,5 +921,52 @@ mod tests {
             vec!["echo", "hello world"]
         );
         assert_eq!(tokenize(r#"  "a b"  c  "#), vec!["a b", "c"]);
+    }
+
+    fn runtime_with_subcommands() -> Runtime {
+        let http = Arc::new(Client::new("test".to_owned()));
+        let voice = Voice::new(Arc::clone(&http), VoiceStates::new(), 1);
+
+        Runtime::new(
+            http,
+            RuntimeConfig {
+                application_id: Id::new(1),
+                commands: vec![Command::new("config", "Manage configuration")],
+                subcommands: vec![
+                    Subcommand::new("config", "show", "Show the configuration"),
+                    Subcommand::new("config", "channel", "Change the channel")
+                        .group("set", "Change settings"),
+                ],
+                components: Vec::new(),
+                autocompletes: Vec::new(),
+                prefix: Some("!".to_owned()),
+                state: Arc::new(StateMap::new()),
+                middleware: Vec::new(),
+                shard_total: 1,
+                voice,
+            },
+        )
+    }
+
+    #[tokio::test]
+    async fn prefix_routing_finds_direct_and_grouped_subcommands() {
+        let runtime = runtime_with_subcommands();
+
+        let tokens = vec!["show".to_owned(), "extra".to_owned()];
+        let (subcommand, consumed) = runtime
+            .find_prefix_subcommand("config", &tokens)
+            .expect("the direct subcommand should match");
+        assert_eq!(subcommand.subcommand.name, "show");
+        assert_eq!(consumed, 1);
+
+        let tokens = vec!["set".to_owned(), "channel".to_owned(), "extra".to_owned()];
+        let (subcommand, consumed) = runtime
+            .find_prefix_subcommand("config", &tokens)
+            .expect("the grouped subcommand should match");
+        assert_eq!(subcommand.subcommand.name, "channel");
+        assert_eq!(consumed, 2);
+
+        let tokens = vec!["set".to_owned()];
+        assert!(runtime.find_prefix_subcommand("config", &tokens).is_none());
     }
 }

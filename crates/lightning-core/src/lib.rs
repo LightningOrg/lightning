@@ -31,6 +31,7 @@ pub mod error;
 pub mod middleware;
 pub mod reply;
 pub mod state;
+pub mod subcommand;
 
 pub use args::{Args, CommandArgs, FromOptionValue, FromToken, OptionKind, OptionSpec};
 pub use autocomplete::{
@@ -45,6 +46,7 @@ pub use error::{Error, Result};
 pub use middleware::{Cooldown, DmOnly, GuildOnly, Middleware, Next, run_pipeline};
 pub use reply::{ActionRow, Button, ButtonStyle, Embed, IntoReply, Modal, Reply};
 pub use state::{State, StateMap};
+pub use subcommand::Subcommand;
 
 /// A dynamic, `Send` future: the glue between handlers and the runtime.
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;

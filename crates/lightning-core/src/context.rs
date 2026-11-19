@@ -75,8 +75,12 @@ pub type Extras = StateMap;
 /// It is cheap to clone (`Arc` inside), so you can move it into tasks.
 #[derive(Clone)]
 pub struct Context {
-    /// Name of the command being executed.
+    /// Name of the command being executed (the parent, for subcommands).
     pub command: &'static str,
+    /// Group of the subcommand being executed, when applicable.
+    pub group: Option<&'static str>,
+    /// Subcommand being executed, when applicable.
+    pub subcommand: Option<&'static str>,
     /// Surface of the invocation.
     pub surface: Surface,
     /// Author of the invocation.
@@ -115,6 +119,8 @@ impl std::fmt::Debug for Context {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Context")
             .field("command", &self.command)
+            .field("group", &self.group)
+            .field("subcommand", &self.subcommand)
             .field("surface", &self.surface)
             .field("user", &self.user.id)
             .field("guild_id", &self.guild_id)
@@ -154,6 +160,19 @@ impl Context {
     /// `true` if the invocation happened inside a guild.
     pub fn is_guild(&self) -> bool {
         self.guild_id.is_some()
+    }
+
+    /// Full command path, including the group and subcommand when present.
+    ///
+    /// `config` → `config`; `config set channel` → `config set channel`.
+    pub fn command_path(&self) -> String {
+        match (self.group, self.subcommand) {
+            (Some(group), Some(subcommand)) => {
+                format!("{} {group} {subcommand}", self.command)
+            }
+            (None, Some(subcommand)) => format!("{} {subcommand}", self.command),
+            _ => self.command.to_owned(),
+        }
     }
 
     /// `true` if this is an interaction invocation.
@@ -204,6 +223,8 @@ impl Context {
     pub fn test(command: &'static str, responder: Arc<dyn Responder>) -> Self {
         Self {
             command,
+            group: None,
+            subcommand: None,
             surface: Surface::Slash,
             user: test_user(),
             member: None,
