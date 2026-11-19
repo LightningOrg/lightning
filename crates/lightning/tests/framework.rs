@@ -25,6 +25,26 @@ async fn echo(args: Args<Echo>) -> Reply {
     Reply::text(args.text.repeat(times as usize))
 }
 
+#[derive(CommandArgs)]
+struct FruitQuery {
+    /// Fruit to look up
+    fruit: String,
+}
+
+#[command(name = "fruit")]
+async fn fruit(args: Args<FruitQuery>) -> Reply {
+    Reply::text(format!("picked {}", args.fruit))
+}
+
+#[autocomplete(command = "fruit", option = "fruit")]
+async fn fruit_autocomplete(focused: Focused) -> Vec<AutocompleteChoice> {
+    ["apple", "apricot", "banana"]
+        .into_iter()
+        .filter(|fruit| fruit.contains(&focused.value))
+        .map(|fruit| AutocompleteChoice::text(fruit, fruit))
+        .collect()
+}
+
 fn ok_handler<'a>(_ctx: &'a Context) -> lightning::BoxFuture<'a, Result<Reply>> {
     Box::pin(async { Ok(Reply::text("ok")) })
 }
@@ -102,6 +122,41 @@ async fn the_command_is_found_in_the_registry() {
         responder.last().unwrap().content.as_deref(),
         Some("pong test")
     );
+}
+
+#[tokio::test]
+async fn autocomplete_handlers_are_registered_and_run() {
+    let handler = lightning::inventory::iter::<lightning::AutocompleteHandler>
+        .into_iter()
+        .find(|handler| handler.command == "fruit" && handler.option == "fruit")
+        .copied()
+        .expect("the fruit autocomplete handler should be registered");
+
+    let (ctx, _) = lightning::testing::mock_autocomplete_context("fruit", "fruit", "ap");
+    let choices = (handler.run)(&ctx).await.unwrap();
+    let names: Vec<&str> = choices.iter().map(|choice| choice.name.as_str()).collect();
+
+    assert_eq!(names, vec!["apple", "apricot"]);
+}
+
+#[test]
+fn string_lists_become_text_choices() {
+    let choices = lightning::IntoChoices::into_choices(vec!["one", "two"]).unwrap();
+
+    assert_eq!(choices.len(), 2);
+    assert_eq!(choices[0].name, "one");
+    assert_eq!(
+        choices[0].value,
+        lightning::ChoiceValue::String("one".into())
+    );
+}
+
+#[test]
+fn focused_parses_typed_values() {
+    let focused = Focused::new("times", "42");
+
+    assert_eq!(focused.parse::<u32>().unwrap(), 42);
+    assert!(focused.parse::<bool>().is_err());
 }
 
 #[tokio::test]

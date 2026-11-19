@@ -26,7 +26,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use lightning_core::context::Responder;
-use lightning_core::{Context, Reply, Result};
+use lightning_core::{Context, Focused, Reply, Result, Surface};
 
 /// Responder that records everything in memory.
 #[derive(Debug, Default)]
@@ -84,6 +84,22 @@ impl Responder for MockResponder {
 pub fn mock_context(command: &'static str) -> (Context, Arc<MockResponder>) {
     let responder = Arc::new(MockResponder::new());
     let context = Context::test(command, responder.clone());
+
+    (context, responder)
+}
+
+/// Creates a test [`Context`] for an autocomplete interaction.
+///
+/// The returned context has `surface = Autocomplete` and a focused option, so
+/// it can be passed straight to an `#[autocomplete]` handler in tests.
+pub fn mock_autocomplete_context(
+    command: &'static str,
+    option: &'static str,
+    value: impl Into<String>,
+) -> (Context, Arc<MockResponder>) {
+    let (mut context, responder) = mock_context(command);
+    context.surface = Surface::Autocomplete;
+    context.focused = Some(Focused::new(option, value));
 
     (context, responder)
 }

@@ -38,6 +38,13 @@ struct Echo {
     times: Option<u8>,
 }
 
+/// Arguments for the autocompleted `fruit` command.
+#[derive(CommandArgs)]
+struct FruitQuery {
+    /// Fruit to look up
+    fruit: String,
+}
+
 /// A button choice.
 #[derive(CommandArgs)]
 struct Choice {
@@ -72,6 +79,44 @@ async fn ping(ctx: Context) -> Reply {
 async fn echo(args: Args<Echo>) -> Reply {
     let times = args.times.unwrap_or(1).clamp(1, 10);
     Reply::text(args.text.repeat(times as usize)).no_mentions()
+}
+
+/// Fruits suggested by `/fruit`, and the command that uses them.
+const FRUITS: &[&str] = &[
+    "apple",
+    "apricot",
+    "banana",
+    "blueberry",
+    "cherry",
+    "grape",
+    "kiwi",
+    "lemon",
+    "lime",
+    "mango",
+    "orange",
+    "peach",
+    "pear",
+    "pineapple",
+    "strawberry",
+    "watermelon",
+];
+
+/// Looks up a fruit; `/fruit fruit:` autocompletes as you type.
+#[command]
+async fn fruit(args: Args<FruitQuery>) -> Reply {
+    Reply::text(format!("You picked **{}**.", args.fruit))
+}
+
+/// Serves the fruit suggestions while the user types.
+#[autocomplete(command = "fruit", option = "fruit")]
+async fn fruit_autocomplete(focused: Focused) -> Vec<AutocompleteChoice> {
+    let query = focused.value.to_ascii_lowercase();
+
+    FRUITS
+        .iter()
+        .filter(|fruit| fruit.contains(&query))
+        .map(|fruit| AutocompleteChoice::text(*fruit, *fruit))
+        .collect()
 }
 
 /// Shows the current server. Only works in guilds.

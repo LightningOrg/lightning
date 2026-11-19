@@ -3,6 +3,7 @@
 //! The macros that make Lightning feel like magic:
 //!
 //! - `#[command]` — turns an async function into a slash **and** prefix command.
+//! - `#[autocomplete]` — serves typed suggestions for one slash command option.
 //! - `#[component]` — routes buttons, menus and modals by `custom_id`.
 //! - `#[event]` — subscribes a handler to a Gateway event.
 //! - `#[main]` — boots the runtime with tracing and the banner.
@@ -35,6 +36,33 @@ pub fn command(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     match expand_command(cfg, function) {
+        Ok(tokens) => tokens.into(),
+        Err(error) => error.to_compile_error().into(),
+    }
+}
+
+/// Marks a function as the autocomplete handler for one command option.
+///
+/// The function accepts the same extractors as a command (`Context`,
+/// `State<T>`, `Focused`…) and returns anything that implements `IntoChoices`:
+/// a `Vec<AutocompleteChoice>`, a `Vec<String>`, a `Vec<&str>`…
+///
+/// ```ignore
+/// # use lightning::prelude::*;
+/// #[autocomplete(command = "search", option = "query")]
+/// async fn search_query(focused: Focused) -> Vec<AutocompleteChoice> {
+///     ["apple", "banana"]
+///         .into_iter()
+///         .filter(|fruit| fruit.contains(&focused.value))
+///         .map(|fruit| AutocompleteChoice::text(fruit, fruit))
+///         .collect()
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn autocomplete(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let function = parse_macro_input!(item as ItemFn);
+
+    match expand_autocomplete(attr.into(), function) {
         Ok(tokens) => tokens.into(),
         Err(error) => error.to_compile_error().into(),
     }
@@ -299,11 +327,15 @@ fn expand_command(cfg: CommandAttr, function: ItemFn) -> syn::Result<TokenStream
     })
 }
 
-/// Generates the function that extracts arguments and calls the handler.
-fn generate_runner(
-    run_ident: &Ident,
-    function: &ItemFn,
-) -> syn::Result<(TokenStream2, TokenStream2)> {
+/// Pieces shared by the `#[command]`, `#[component]` and `#[autocomplete]`
+/// runners: how to obtain each parameter from the `Context`.
+struct RunnerParts {
+    extractions: Vec<TokenStream2>,
+    call_args: Vec<TokenStream2>,
+    args_ty: Type,
+}
+
+fn runner_parts(function: &ItemFn) -> syn::Result<RunnerParts> {
     let mut extractions = Vec::new();
     let mut call_args = Vec::new();
     let mut args_ty: Option<Type> = None;
@@ -335,7 +367,23 @@ fn generate_runner(
         }
     }
 
-    let args_ty = args_ty.unwrap_or_else(|| syn::parse_quote!(()));
+    Ok(RunnerParts {
+        extractions,
+        call_args,
+        args_ty: args_ty.unwrap_or_else(|| syn::parse_quote!(())),
+    })
+}
+
+/// Generates the function that extracts arguments and calls the handler.
+fn generate_runner(
+    run_ident: &Ident,
+    function: &ItemFn,
+) -> syn::Result<(TokenStream2, TokenStream2)> {
+    let RunnerParts {
+        extractions,
+        call_args,
+        args_ty,
+    } = runner_parts(function)?;
     let handler = &function.sig.ident;
 
     let run_fn = quote! {
@@ -353,6 +401,92 @@ fn generate_runner(
     };
 
     Ok((run_fn, quote!(#args_ty)))
+}
+
+// ---------------------------------------------------------------------------
+// #[autocomplete]
+// ---------------------------------------------------------------------------
+
+#[derive(Default)]
+struct AutocompleteAttr {
+    command: Option<String>,
+    option: Option<String>,
+}
+
+impl AutocompleteAttr {
+    fn parse(tokens: TokenStream2) -> syn::Result<Self> {
+        let mut cfg = Self::default();
+        let attr: Attribute = syn::parse_quote!(#[autocomplete(#tokens)]);
+
+        attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("command") {
+                cfg.command = Some(meta.value()?.parse::<LitStr>()?.value());
+                return Ok(());
+            }
+            if meta.path.is_ident("option") {
+                cfg.option = Some(meta.value()?.parse::<LitStr>()?.value());
+                return Ok(());
+            }
+
+            Err(meta.error("unknown attribute: use command = \"...\" and option = \"...\""))
+        })?;
+
+        Ok(cfg)
+    }
+}
+
+fn expand_autocomplete(tokens: TokenStream2, function: ItemFn) -> syn::Result<TokenStream2> {
+    let cfg = AutocompleteAttr::parse(tokens)?;
+    let fn_name = &function.sig.ident;
+
+    let command = cfg.command.ok_or_else(|| {
+        syn::Error::new_spanned(
+            &function.sig,
+            "`#[autocomplete]` requires `command = \"...\"`",
+        )
+    })?;
+    let option = cfg.option.ok_or_else(|| {
+        syn::Error::new_spanned(
+            &function.sig,
+            "`#[autocomplete]` requires `option = \"...\"`",
+        )
+    })?;
+
+    let command_lit = LitStr::new(&command, fn_name.span());
+    let option_lit = LitStr::new(&option, fn_name.span());
+    let run_ident = format_ident!("__lightning_autocomplete_{}", fn_name);
+    let RunnerParts {
+        extractions,
+        call_args,
+        ..
+    } = runner_parts(&function)?;
+
+    Ok(quote! {
+        #function
+
+        #[allow(non_snake_case)]
+        fn #run_ident<'__lightning>(
+            __ctx: &'__lightning ::lightning::Context,
+        ) -> ::lightning::BoxFuture<
+            '__lightning,
+            ::lightning::Result<::std::vec::Vec<::lightning::AutocompleteChoice>>,
+        > {
+            ::std::boxed::Box::pin(async move {
+                let __ctx: ::lightning::Context =
+                    <::lightning::Context as ::lightning::FromContext>::from_context(__ctx).await?;
+                #(#extractions)*
+                ::lightning::IntoChoices::into_choices(#fn_name(#(#call_args),*).await)
+            })
+        }
+
+        ::lightning::inventory::submit! {
+            ::lightning::AutocompleteHandler {
+                command: #command_lit,
+                option: #option_lit,
+                run: #run_ident,
+            }
+        }
+    })
 }
 
 // ---------------------------------------------------------------------------

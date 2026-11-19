@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use lightning_core::command::Command;
-use lightning_core::{Error, Middleware, Result, StateMap};
+use lightning_core::{AutocompleteHandler, Error, Middleware, Result, StateMap};
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
 use twilight_gateway::Intents;
@@ -188,6 +188,11 @@ impl Lightning {
             })
             .collect();
 
+        let autocompletes: Vec<AutocompleteHandler> = inventory::iter::<AutocompleteHandler>
+            .into_iter()
+            .copied()
+            .collect();
+
         let shard_total = match self.shards {
             Some(count) => count,
             None => http
@@ -210,6 +215,7 @@ impl Lightning {
                 application_id,
                 commands,
                 components,
+                autocompletes,
                 prefix: self.prefix.clone(),
                 state: Arc::new(self.state),
                 middleware: self.middleware,

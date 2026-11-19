@@ -16,7 +16,8 @@ here to work on the code, start here.
 │   │   Responder (trait) · StateMap · Error               │  │
 │   └──────────────────────────────────────────────────────┘  │
 │   lightning-macros       (procedural macros)                │
-│   #[command] #[event] #[component] #[main] derive(CommandArgs)│
+│   #[command] #[autocomplete] #[event] #[component] #[main]  │
+│   derive(CommandArgs)                                       │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -177,6 +178,24 @@ The voice-state cache (`VoiceStates`) is seeded from `GuildCreate` and updated
 on every `VoiceStateUpdate`. It is intentionally small: only the states the
 count queries need, no members, roles or channels.
 
+### 8. Autocomplete is registered, not configured
+
+`#[autocomplete(command = "search", option = "query")]` emits an
+`AutocompleteHandler` entry (command name, option name and `AutocompleteFn`)
+through `inventory`, just like a command. Two things follow from that:
+
+- At registration time, `convert::to_commands` walks the handlers and marks the
+  matching options with `autocomplete: true`. The user does not repeat the
+  option metadata anywhere.
+- At runtime, an `ApplicationCommandAutocomplete` interaction is routed by
+  `(command name, focused option name)` to the handler. The handler receives a
+  `Context` with `surface = Autocomplete` and the `Focused` extractor, and its
+  choices are converted to Discord's `CommandOptionChoice` model.
+
+Autocomplete deliberately bypasses the middleware pipeline: it fires on every
+keystroke and a cooldown would be both wrong and annoying. Responses are capped
+at 25 choices and names/values at 100 characters before they reach Discord.
+
 ## The life of a response
 
 1. The handler returns `impl IntoReply` (`Reply`, `String`, `()`,
@@ -190,7 +209,6 @@ count queries need, no members, roles or channels.
 
 ## Known limits (MVP)
 
-- Autocomplete: payloads are ignored for now (answered with an empty list).
 - Subcommands: routing exists for flat options; groups are flattened.
 - Sharding: own shards, no `ShardManager` or coordinated queue.
 - Voice: receiving audio (voice transcription) is not implemented, only

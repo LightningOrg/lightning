@@ -50,6 +50,32 @@
 //! }
 //! ```
 //!
+//! # Autocomplete
+//!
+//! ```no_run
+//! use lightning::prelude::*;
+//!
+//! #[derive(CommandArgs)]
+//! struct Search {
+//!     /// Fruit to look up
+//!     fruit: String,
+//! }
+//!
+//! #[command]
+//! async fn search(args: Args<Search>) -> Reply {
+//!     Reply::text(format!("you picked {}", args.fruit))
+//! }
+//!
+//! #[autocomplete(command = "search", option = "fruit")]
+//! async fn fruits(focused: Focused) -> Vec<AutocompleteChoice> {
+//!     ["apple", "banana"]
+//!         .into_iter()
+//!         .filter(|fruit| fruit.contains(&focused.value))
+//!         .map(|fruit| AutocompleteChoice::text(fruit, fruit))
+//!         .collect()
+//! }
+//! ```
+//!
 //! # Middleware
 //!
 //! ```no_run
@@ -79,11 +105,12 @@ pub use voice::{Voice, VoiceConnection};
 pub use voice_states::VoiceStates;
 
 pub use lightning_core::{
-    ActionRow, Args, Author, BoxFuture, Button, ButtonStyle, ChannelId, Command, CommandArgs,
-    CommandKind, Context, Cooldown, DmOnly, Embed, Error, Extras, FromContext, FromOptionValue,
-    FromToken, Guild, GuildOnly, Interaction, IntoReply, Member, Message, Middleware, Modal, Next,
-    OptionKind, OptionSpec, Reply, Responder, Result, State, StateMap, Surface, UserId, Values,
-    run_pipeline,
+    ActionRow, Args, Author, AutocompleteChoice, AutocompleteFn, AutocompleteHandler, BoxFuture,
+    Button, ButtonStyle, ChannelId, ChoiceValue, Command, CommandArgs, CommandKind, Context,
+    Cooldown, DmOnly, Embed, Error, Extras, Focused, FromContext, FromOptionValue, FromToken,
+    Guild, GuildOnly, Interaction, IntoChoices, IntoReply, Member, Message, Middleware, Modal,
+    Next, OptionKind, OptionSpec, Reply, Responder, Result, State, StateMap, Surface, UserId,
+    Values, run_pipeline,
 };
 
 /// Helpers for the macros (argument errors).
@@ -93,7 +120,7 @@ pub use lightning_core::async_trait;
 /// Re-export of the core middleware module.
 pub use lightning_core::middleware;
 
-pub use lightning_macros::{CommandArgs, command, component, event, main};
+pub use lightning_macros::{CommandArgs, autocomplete, command, component, event, main};
 
 #[doc(hidden)]
 pub use inventory;
@@ -129,11 +156,11 @@ pub use twilight_http::Client;
 pub mod prelude {
     pub use crate::model::{DiscordMessage, Event, Id, Intents, PartialMember, User};
     pub use crate::{
-        ActionRow, Args, Button, ButtonStyle, Command, CommandArgs, CommandKind, Context, Cooldown,
-        Embed, Error, Lightning, Middleware, Modal, Next, OptionKind, Reply, Result, State, UserId,
-        Voice, VoiceConnection, VoiceStates,
+        ActionRow, Args, AutocompleteChoice, Button, ButtonStyle, ChoiceValue, Command,
+        CommandArgs, CommandKind, Context, Cooldown, Embed, Error, Focused, Lightning, Middleware,
+        Modal, Next, OptionKind, Reply, Result, State, UserId, Voice, VoiceConnection, VoiceStates,
     };
-    pub use crate::{command, component, event};
+    pub use crate::{autocomplete, command, component, event};
 }
 
 #[doc(hidden)]
