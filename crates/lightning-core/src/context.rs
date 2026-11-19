@@ -10,6 +10,7 @@ use twilight_model::id::marker::{ChannelMarker, GuildMarker, MessageMarker, User
 use twilight_model::user::User;
 
 use crate::args::{Args, CommandArgs};
+use crate::autocomplete::Focused;
 use crate::error::{Error, Result};
 use crate::reply::Reply;
 use crate::state::{State, StateMap};
@@ -25,6 +26,8 @@ pub enum Surface {
     Component,
     /// Modal submit.
     Modal,
+    /// Autocomplete for a slash command option.
+    Autocomplete,
 }
 
 impl Surface {
@@ -41,6 +44,11 @@ impl Surface {
     /// `true` if it is a prefix command.
     pub const fn is_prefix(self) -> bool {
         matches!(self, Self::Prefix)
+    }
+
+    /// `true` if it is an autocomplete interaction.
+    pub const fn is_autocomplete(self) -> bool {
+        matches!(self, Self::Autocomplete)
     }
 }
 
@@ -87,6 +95,8 @@ pub struct Context {
     pub message: Option<DiscordMessage>,
     /// Options already normalized to JSON (slash, components and modals).
     pub options: Option<Map<String, Value>>,
+    /// Option the user is typing, during autocomplete.
+    pub focused: Option<Focused>,
     /// Tokens of a prefix command.
     pub tokens: Vec<String>,
     /// Values of a select menu.
@@ -203,6 +213,7 @@ impl Context {
             interaction: None,
             message: None,
             options: None,
+            focused: None,
             tokens: Vec::new(),
             values: Vec::new(),
             shard_id: 0,

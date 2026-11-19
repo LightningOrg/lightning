@@ -24,6 +24,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 pub mod args;
+pub mod autocomplete;
 pub mod command;
 pub mod context;
 pub mod error;
@@ -32,6 +33,9 @@ pub mod reply;
 pub mod state;
 
 pub use args::{Args, CommandArgs, FromOptionValue, FromToken, OptionKind, OptionSpec};
+pub use autocomplete::{
+    AutocompleteChoice, AutocompleteFn, AutocompleteHandler, ChoiceValue, Focused, IntoChoices,
+};
 pub use command::{Command, CommandKind};
 pub use context::{
     Author, ChannelId, Context, Extras, FromContext, Guild, Interaction, Member, Message,

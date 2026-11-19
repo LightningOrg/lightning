@@ -1,12 +1,17 @@
 //! Conversion between Lightning's model and Twilight's types.
 
 use lightning_core::command::Command;
-use lightning_core::{Error, OptionKind, Reply, Result};
+use lightning_core::{
+    AutocompleteChoice, AutocompleteHandler, ChoiceValue, Error, OptionKind, Reply, Result,
+};
 use serde_json::{Map, Value, json};
 use twilight_model::application::command::{
-    Command as TwilightCommand, CommandOption, CommandOptionType, CommandType,
+    Command as TwilightCommand, CommandOption, CommandOptionChoice, CommandOptionChoiceValue,
+    CommandOptionType, CommandType,
 };
-use twilight_model::application::interaction::application_command::CommandDataOption;
+use twilight_model::application::interaction::application_command::{
+    CommandDataOption, CommandOptionValue,
+};
 use twilight_model::channel::message::Component;
 use twilight_model::channel::message::Embed;
 use twilight_model::channel::message::MessageFlags;
@@ -17,8 +22,14 @@ use twilight_model::http::interaction::{
 use twilight_model::id::Id;
 
 /// Converts framework commands to Discord's model.
+///
+/// Options with an [`AutocompleteHandler`] are published with
+/// `autocomplete: true`, which is what makes Discord send the interaction.
 #[allow(deprecated)]
-pub(crate) fn to_commands<'a>(commands: impl Iterator<Item = &'a Command>) -> Vec<TwilightCommand> {
+pub(crate) fn to_commands<'a>(
+    commands: impl Iterator<Item = &'a Command>,
+    autocompletes: &[AutocompleteHandler],
+) -> Vec<TwilightCommand> {
     commands
         .filter(|command| command.kind.allows(true))
         .map(|command| TwilightCommand {
@@ -41,15 +52,29 @@ pub(crate) fn to_commands<'a>(commands: impl Iterator<Item = &'a Command>) -> Ve
             name: command.name.to_owned(),
             name_localizations: None,
             nsfw: command.nsfw.then_some(true),
-            options: command.options.iter().map(to_option).collect(),
+            options: command
+                .options
+                .iter()
+                .map(|spec| to_option(command, spec, autocompletes))
+                .collect(),
             version: Id::new(1),
         })
         .collect()
 }
 
-fn to_option(spec: &lightning_core::OptionSpec) -> CommandOption {
+fn to_option(
+    command: &Command,
+    spec: &lightning_core::OptionSpec,
+    autocompletes: &[AutocompleteHandler],
+) -> CommandOption {
+    // Discord only accepts autocomplete on string, integer and number options.
+    let autocomplete = !matches!(spec.kind, OptionKind::Boolean)
+        && autocompletes
+            .iter()
+            .any(|handler| handler.matches(command.name, spec.name));
+
     CommandOption {
-        autocomplete: None,
+        autocomplete: autocomplete.then_some(true),
         channel_types: None,
         choices: None,
         description: spec.description.to_owned(),
@@ -167,15 +192,53 @@ pub(crate) fn pong() -> InteractionResponse {
     }
 }
 
-/// Empty autocomplete reply (not supported yet).
-pub(crate) fn empty_autocomplete() -> InteractionResponse {
+/// Autocomplete reply with up to 25 typed choices.
+pub(crate) fn autocomplete(choices: &[AutocompleteChoice]) -> InteractionResponse {
+    let choices = choices
+        .iter()
+        .take(25)
+        .map(|choice| CommandOptionChoice {
+            name: truncate(&choice.name, 100),
+            name_localizations: None,
+            value: match &choice.value {
+                ChoiceValue::String(text) => CommandOptionChoiceValue::String(truncate(text, 100)),
+                ChoiceValue::Integer(number) => CommandOptionChoiceValue::Integer(*number),
+                ChoiceValue::Number(number) => CommandOptionChoiceValue::Number(*number),
+            },
+        })
+        .collect();
+
     InteractionResponse {
         kind: InteractionResponseType::ApplicationCommandAutocompleteResult,
         data: Some(InteractionResponseData {
-            choices: Some(Vec::new()),
+            choices: Some(choices),
             ..Default::default()
         }),
     }
+}
+
+/// Discord counts characters, not bytes, and rejects longer values.
+fn truncate(text: &str, max: usize) -> String {
+    text.chars().take(max).collect()
+}
+
+/// Finds the option the user is typing, looking through subcommands too.
+pub(crate) fn focused_option(options: &[CommandDataOption]) -> Option<(String, String)> {
+    for option in options {
+        match &option.value {
+            CommandOptionValue::Focused(value, _) => {
+                return Some((option.name.clone(), value.clone()));
+            }
+            CommandOptionValue::SubCommand(inner) | CommandOptionValue::SubCommandGroup(inner) => {
+                if let Some(found) = focused_option(inner) {
+                    return Some(found);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    None
 }
 
 /// Flattens interaction options into a JSON map.
@@ -279,10 +342,22 @@ mod tests {
         },
     ];
 
+    fn no_choices<'a>(
+        _: &'a lightning_core::Context,
+    ) -> lightning_core::BoxFuture<'a, lightning_core::Result<Vec<AutocompleteChoice>>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+
+    static AUTOCOMPLETE: AutocompleteHandler = AutocompleteHandler {
+        command: "echo",
+        option: "text",
+        run: no_choices,
+    };
+
     #[test]
     fn commands_serialize_the_way_discord_expects() {
         let command = Command::new("echo", "Repeats a text").options(OPTIONS);
-        let converted = to_commands(std::iter::once(&command));
+        let converted = to_commands(std::iter::once(&command), &[]);
         let json = serde_json::to_value(&converted[0]).unwrap();
 
         assert_eq!(json["name"], "echo");
@@ -292,6 +367,60 @@ mod tests {
         assert_eq!(json["options"][0]["required"], true);
         assert_eq!(json["options"][1]["type"], 4);
         assert_eq!(json["options"][1]["required"], false);
+    }
+
+    #[test]
+    fn options_with_a_handler_are_published_as_autocomplete() {
+        let command = Command::new("echo", "Repeats a text").options(OPTIONS);
+        let converted = to_commands(std::iter::once(&command), &[AUTOCOMPLETE]);
+        let json = serde_json::to_value(&converted[0]).unwrap();
+
+        assert_eq!(json["options"][0]["autocomplete"], true);
+        assert!(json["options"][1]["autocomplete"].is_null());
+    }
+
+    #[test]
+    fn autocomplete_replies_with_typed_choices() {
+        let response = autocomplete(&[
+            AutocompleteChoice::text("Apple", "apple"),
+            AutocompleteChoice::integer("Two", 2),
+            AutocompleteChoice::number("Half", 0.5),
+        ]);
+        let json = serde_json::to_value(&response).unwrap();
+
+        assert_eq!(json["type"], 8);
+        assert_eq!(json["data"]["choices"][0]["name"], "Apple");
+        assert_eq!(json["data"]["choices"][0]["value"], "apple");
+        assert_eq!(json["data"]["choices"][1]["value"], 2);
+        assert_eq!(json["data"]["choices"][2]["value"], 0.5);
+    }
+
+    #[test]
+    fn autocomplete_is_limited_to_25_choices() {
+        let choices: Vec<_> = (0..30)
+            .map(|index| AutocompleteChoice::text(format!("Choice {index}"), index.to_string()))
+            .collect();
+
+        let response = autocomplete(&choices);
+        let data = response.data.unwrap();
+
+        assert_eq!(data.choices.unwrap().len(), 25);
+    }
+
+    #[test]
+    fn finds_the_focused_option_inside_subcommands() {
+        let options = vec![CommandDataOption {
+            name: "user".into(),
+            value: CommandOptionValue::SubCommand(vec![CommandDataOption {
+                name: "query".into(),
+                value: CommandOptionValue::Focused("app".into(), CommandOptionType::String),
+            }]),
+        }];
+
+        assert_eq!(
+            focused_option(&options),
+            Some(("query".to_owned(), "app".to_owned()))
+        );
     }
 
     #[test]

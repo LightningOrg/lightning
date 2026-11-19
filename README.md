@@ -159,6 +159,50 @@ async fn echo(args: Args<Echo>) -> Reply {
 Supported types: `String`, integers, `f32`/`f64`, `bool`, `char`, `Id<T>`,
 `Option<T>`, `Vec<T>` and `serde_json::Value`.
 
+### Autocomplete
+
+Declare an `#[autocomplete]` handler for a command option and Discord will call
+it on every keystroke. The handler gets a `Focused` (the option being typed) and
+returns typed choices:
+
+```rust
+#[derive(CommandArgs)]
+struct FruitQuery {
+    /// Fruit to look up
+    fruit: String,
+}
+
+const FRUITS: &[&str] = &["apple", "apricot", "banana", "blueberry"];
+
+#[command]
+async fn fruit(args: Args<FruitQuery>) -> Reply {
+    Reply::text(format!("You picked **{}**.", args.fruit))
+}
+
+#[autocomplete(command = "fruit", option = "fruit")]
+async fn fruit_autocomplete(focused: Focused) -> Vec<AutocompleteChoice> {
+    let query = focused.value.to_ascii_lowercase();
+
+    FRUITS
+        .iter()
+        .filter(|fruit| fruit.contains(&query))
+        .map(|fruit| AutocompleteChoice::text(*fruit, *fruit))
+        .collect()
+}
+```
+
+- The command option is registered with `autocomplete: true` automatically.
+- Handlers accept the same extractors as commands (`Context`, `State<T>`,
+  `Guild`…), but skip middleware and only run on slash commands.
+- Return `Vec<AutocompleteChoice>` for text/integer/number choices,
+  `Vec<String>`/`Vec<&str>` for simple text lists, or `()` for no suggestions.
+- `AutocompleteChoice::integer` and `::number` attach typed values.
+- Discord caps responses at 25 choices; Lightning truncates longer lists.
+- Keep handlers fast (ideally in-memory): Discord only waits a few seconds.
+
+> **Tip:** `Focused::parse::<T>()` converts the typed text, which Discord always
+> sends as a `String` (even for integer and number options).
+
 ### Extractors
 
 The function signature is the documentation: ask for what you need and
@@ -176,6 +220,7 @@ Lightning injects it.
 | `Message` | source message (prefix) |
 | `Interaction` | the raw interaction |
 | `Values` | values from a select menu |
+| `Focused` | the option being typed (autocomplete) |
 
 ### Middleware
 
@@ -375,6 +420,20 @@ No network, no token, no Discord.
 | `middleware` | `middleware = [MyLayer]` | Command-specific layers |
 | `auto_register` | `auto_register = "false"` | Disables auto-registration |
 
+### `#[autocomplete]` reference
+
+```rust
+#[autocomplete(command = "fruit", option = "fruit")]
+async fn fruits(focused: Focused) -> Vec<AutocompleteChoice> { /* … */ }
+```
+
+| Field | Description |
+|---|---|
+| `command` | Name of the command that owns the option |
+| `option` | Name of the option to autocomplete |
+
+Handlers are registered automatically with `inventory`; you never list them.
+
 ---
 
 ## Repository layout
@@ -402,7 +461,7 @@ cargo run -p examples-basics
 ## Roadmap
 
 - [x] Voice: join, playback, text-in-voice chat and moderation.
-- [ ] Typed autocomplete (`#[autocomplete]`).
+- [x] Typed autocomplete (`#[autocomplete]`).
 - [ ] Subcommands and groups (`#[subcommand]`).
 - [ ] First-class select menus.
 - [ ] Receiving voice (transcription) and per-user volume.

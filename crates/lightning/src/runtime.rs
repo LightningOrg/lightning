@@ -5,7 +5,9 @@ use std::sync::Arc;
 use lightning_core::command::Command;
 use lightning_core::context::Surface;
 use lightning_core::middleware::{self, Middleware};
-use lightning_core::{Context, Error, Reply, Result, StateMap};
+use lightning_core::{
+    AutocompleteHandler, Context, Error, Focused, OptionKind, Reply, Result, StateMap,
+};
 use serde_json::Map;
 use tracing::{debug, info, warn};
 use twilight_gateway::EventTypeFlags;
@@ -37,6 +39,7 @@ pub(crate) struct Runtime {
     pub application_id: Id<ApplicationMarker>,
     pub commands: Vec<CommandSlot>,
     pub components: Vec<ComponentHandler>,
+    pub autocompletes: Vec<AutocompleteHandler>,
     pub prefix: Option<String>,
     pub state: Arc<StateMap>,
     pub middleware: Arc<[Arc<dyn Middleware>]>,
@@ -49,6 +52,7 @@ pub(crate) struct RuntimeConfig {
     pub application_id: Id<ApplicationMarker>,
     pub commands: Vec<Command>,
     pub components: Vec<ComponentHandler>,
+    pub autocompletes: Vec<AutocompleteHandler>,
     pub prefix: Option<String>,
     pub state: Arc<StateMap>,
     pub middleware: Vec<Arc<dyn Middleware>>,
@@ -62,12 +66,54 @@ impl Runtime {
             application_id,
             commands,
             components,
+            autocompletes,
             prefix,
             state,
             middleware,
             shard_total,
             voice,
         } = config;
+
+        for handler in &autocompletes {
+            let Some(command) = commands
+                .iter()
+                .find(|command| command.name == handler.command)
+            else {
+                warn!(
+                    command = handler.command,
+                    option = handler.option,
+                    "autocomplete handler points to an unknown command"
+                );
+                continue;
+            };
+
+            if !command.kind.allows(true) {
+                warn!(
+                    command = handler.command,
+                    option = handler.option,
+                    "autocomplete requires a slash command"
+                );
+                continue;
+            }
+
+            match command
+                .options
+                .iter()
+                .find(|option| option.name == handler.option)
+            {
+                None => warn!(
+                    command = handler.command,
+                    option = handler.option,
+                    "autocomplete handler points to an unknown option"
+                ),
+                Some(option) if matches!(option.kind, OptionKind::Boolean) => warn!(
+                    command = handler.command,
+                    option = handler.option,
+                    "Discord cannot autocomplete boolean options"
+                ),
+                Some(_) => {}
+            }
+        }
 
         let commands = commands
             .into_iter()
@@ -82,6 +128,7 @@ impl Runtime {
             application_id,
             commands,
             components,
+            autocompletes,
             prefix,
             state,
             middleware: middleware.into(),
@@ -92,7 +139,10 @@ impl Runtime {
 
     /// Publishes the slash commands to Discord.
     pub(crate) async fn register(&self, guild_id: Option<Id<GuildMarker>>) -> Result<()> {
-        let commands = convert::to_commands(self.commands.iter().map(|slot| &slot.command));
+        let commands = convert::to_commands(
+            self.commands.iter().map(|slot| &slot.command),
+            &self.autocompletes,
+        );
 
         if commands.is_empty() {
             info!("there are no slash commands to register");
@@ -208,9 +258,7 @@ impl Runtime {
         }
 
         if interaction.kind == InteractionType::ApplicationCommandAutocomplete {
-            debug!("autocomplete not supported yet: replying with an empty list");
-            self.respond_raw(&interaction, convert::empty_autocomplete())
-                .await;
+            self.autocomplete(interaction).await;
             return;
         }
 
@@ -246,6 +294,66 @@ impl Runtime {
         {
             warn!(%error, "could not respond to the interaction");
         }
+    }
+
+    /// Answers an autocomplete interaction with typed choices.
+    ///
+    /// Middleware is deliberately skipped: autocomplete runs on every
+    /// keystroke, so cooldowns and similar layers would be wrong here.
+    async fn autocomplete(&self, interaction: Interaction) {
+        let Some(InteractionData::ApplicationCommand(data)) = interaction.data.clone() else {
+            self.respond_raw(&interaction, convert::autocomplete(&[]))
+                .await;
+            return;
+        };
+
+        let Some((option, value)) = convert::focused_option(&data.options) else {
+            debug!(command = %data.name, "autocomplete without a focused option");
+            self.respond_raw(&interaction, convert::autocomplete(&[]))
+                .await;
+            return;
+        };
+
+        let handler = self
+            .autocompletes
+            .iter()
+            .find(|handler| handler.matches(&data.name, &option))
+            .copied();
+
+        let Some(handler) = handler else {
+            debug!(
+                command = %data.name,
+                option = %option,
+                "no autocomplete handler for this option"
+            );
+            self.respond_raw(&interaction, convert::autocomplete(&[]))
+                .await;
+            return;
+        };
+
+        let options = Some(convert::option_map(&data.options));
+        let Some(mut ctx) = self.interaction_context(
+            &interaction,
+            handler.command,
+            Surface::Autocomplete,
+            options,
+            Vec::new(),
+            InitialKind::Message,
+        ) else {
+            return;
+        };
+        ctx.focused = Some(Focused::new(option, value));
+
+        let choices = match (handler.run)(&ctx).await {
+            Ok(choices) => choices,
+            Err(error) => {
+                warn!(command = %data.name, %error, "autocomplete handler failed");
+                Vec::new()
+            }
+        };
+
+        self.respond_raw(&interaction, convert::autocomplete(&choices))
+            .await;
     }
 
     async fn slash(self: &Arc<Self>, interaction: Interaction, data: CommandData, _shard_id: u32) {
@@ -372,6 +480,7 @@ impl Runtime {
             interaction: Some(interaction.clone()),
             message: interaction.message.clone(),
             options,
+            focused: None,
             tokens: Vec::new(),
             values,
             shard_id: 0,
@@ -405,6 +514,7 @@ impl Runtime {
             interaction: None,
             message: None,
             options: None,
+            focused: None,
             tokens: Vec::new(),
             values: Vec::new(),
             shard_id: 0,
@@ -465,6 +575,7 @@ impl Runtime {
             interaction: None,
             message: Some(message),
             options: None,
+            focused: None,
             tokens: args.to_vec(),
             values: Vec::new(),
             shard_id: 0,

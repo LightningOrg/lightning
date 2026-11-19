@@ -4,6 +4,26 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Typed autocomplete: `#[autocomplete(command = "...", option = "...")]` binds
+  an async handler to a slash command option.
+- `AutocompleteChoice`, `ChoiceValue` and `IntoChoices` for returning typed
+  suggestions (`Vec<AutocompleteChoice>`, `Vec<String>`, `Vec<&str>`…).
+- `Focused` extractor with `parse::<T>()`, `as_i64()` and `as_f64()`.
+- `Surface::Autocomplete` and `Context::focused`; handlers can use the same
+  extractors as commands (`Context`, `State<T>`…).
+- `mock_autocomplete_context` test helper.
+- Options with a handler are published to Discord with `autocomplete: true`
+  automatically. Responses are capped at 25 choices.
+
+### Changed
+
+- Autocomplete interactions are routed to their handler instead of being
+  answered with an empty list.
+
 ## [0.1.1] - 2026-11-18
 
 Voice channels land in Lightning.
