@@ -20,7 +20,7 @@ async fn ping(ctx: Context) -> Reply {
 That's it. That command already answers both `/ping` and `!ping`, gets registered
 with Discord, and can be tested without a network connection.
 
-> **Status:** alpha (`0.1.1`). The API may change before `1.0`.
+> **Status:** alpha (`0.1.2`). The API may change before `1.0`.
 > Engine: [twilight](https://twilight.rs) `0.18`.
 
 ---
@@ -97,7 +97,7 @@ cargo run -p examples-basics
 On startup you'll see the banner:
 
 ```
-  Lightning v0.1.1
+  Lightning v0.1.2
   ─────────────────────────────────────
   Bot         Lightning#1234
   Servers     3
