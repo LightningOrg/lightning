@@ -4,6 +4,26 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.4] - 2026-11-20
+
+First-class select menus.
+
+### Added
+
+- `SelectMenu` builder for all five Discord kinds: `text` (classic string
+  select), `user`, `role`, `mentionable` and `channel`, with options,
+  placeholders, `min_values`, `max_values`, `disabled` and `channel_types`.
+- `ActionRow::select(...)`.
+- `SelectValue` for the first selected value and `Selected<T>` for typed values
+  parsed with `FromToken` (`Selected<Id<UserMarker>>`, `Selected<String>`…).
+- Example bot: `/poll` (string select) and `/pick-user` (user select).
+
+### Changed
+
+- `Button` and `SelectMenu` implement `From<_> for serde_json::Value`, so
+  `ActionRow::component` accepts either.
+- The raw `Values` extractor is now part of the prelude.
+
 ## [0.1.3] - 2026-11-19
 
 Subcommands and groups.

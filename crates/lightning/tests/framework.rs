@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use lightning::prelude::*;
 use lightning::testing::mock_context;
+use lightning::{FromContext, model::UserMarker};
 
 #[derive(CommandArgs, Debug, PartialEq)]
 struct Echo {
@@ -288,4 +289,41 @@ async fn middleware_can_cut_the_chain() {
     let result = lightning::run_pipeline(&[layer], &[], ok_handler, ctx).await;
 
     assert!(matches!(result, Err(Error::Forbidden)));
+}
+
+#[tokio::test]
+async fn select_values_are_available_raw_and_typed() {
+    let (mut ctx, _) = mock_context("poll");
+    ctx.values = vec!["10".to_owned(), "20".to_owned()];
+
+    let raw = Values::from_context(&ctx).await.unwrap();
+    assert_eq!(raw.0, vec!["10".to_owned(), "20".to_owned()]);
+
+    let first = SelectValue::from_context(&ctx).await.unwrap();
+    assert_eq!(&*first, "10");
+
+    let ids = Selected::<Id<UserMarker>>::from_context(&ctx)
+        .await
+        .unwrap();
+    assert_eq!(ids.0, vec![Id::new(10), Id::new(20)]);
+    assert_eq!(ids.len(), 2);
+}
+
+#[tokio::test]
+async fn select_value_requires_a_selection() {
+    let (ctx, _) = mock_context("poll");
+
+    assert!(SelectValue::from_context(&ctx).await.is_err());
+}
+
+#[tokio::test]
+async fn typed_select_values_report_invalid_values() {
+    let (mut ctx, _) = mock_context("poll");
+    ctx.values = vec!["not-an-id".to_owned()];
+
+    let error = Selected::<Id<UserMarker>>::from_context(&ctx)
+        .await
+        .unwrap_err();
+
+    assert!(error.to_string().contains("selected value"));
 }

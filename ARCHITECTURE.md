@@ -220,13 +220,27 @@ require a subcommand. `Context.command` stays the root name, while
 rest. Autocomplete entries carry the same path, so identical option names in
 different subcommands do not collide.
 
+### 10. Select menus are components, not a new surface
+
+A select menu is JSON like a button: `SelectMenu` writes the component payload
+(type 3, 5, 6, 7 or 8), `ActionRow::select` wraps it and Twilight validates it
+when the reply is sent. Nothing new is registered at startup and no macro is
+involved.
+
+Inbound, Discord sends a `MessageComponent` interaction with the selected
+values. The existing `#[component]` dispatcher fills `Context.values`; `Values`
+exposes them raw, `SelectValue` takes the first one and `Selected<T>` parses
+every entry with `FromToken`, the same trait behind the prefix parser. That is
+why `Selected<Id<UserMarker>>` works without one type per select kind. Replies
+use response type 7 (update message), which is what a selection expects.
+
 ## The life of a response
 
 1. The handler returns `impl IntoReply` (`Reply`, `String`, `()`,
    `Result<T, Error>`…).
 2. `IntoReply::into_reply` normalizes it to `Reply`.
 3. If `defer` was called, the responder sends a *followup*; otherwise it sends
-   the initial response (type 4, or type 7 for buttons).
+   the initial response (type 4, or type 7 for components).
 4. An empty `Reply` sends nothing: that lets you call `ctx.defer().await?` and
    then decide not to reply.
 5. An `Err` becomes an ephemeral `❌ …` message and is logged with `tracing`.
@@ -238,6 +252,7 @@ different subcommands do not collide.
 - Sharding: own shards, no `ShardManager` or coordinated queue.
 - Voice: receiving audio (voice transcription) is not implemented, only
   playback and moderation; audio requires `cmake` to build libopus.
+- Select menus: supported in messages; `Modal` still builds only text inputs.
 - No guild cache: if you need members or roles, use HTTP or add
   `twilight-cache-inmemory` in your own layer.
 - `Reply` does not support attachments or `payload_json`.
@@ -249,5 +264,6 @@ different subcommands do not collide.
 3. It builds the `Context` (interaction or message).
 4. It runs `run_pipeline` and replies through the `Responder`.
 
-If you add a new surface (select menus, for example), reuse `RunFn`, the pipeline
-and `Context`: only the way you build the context and the `custom_id` change.
+Components (buttons, select menus and modals) already work that way: they reuse
+`RunFn`, the pipeline and `Context`; only how the context is built and how the
+`custom_id` and values are read change.

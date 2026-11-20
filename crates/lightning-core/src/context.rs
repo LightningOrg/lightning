@@ -9,7 +9,7 @@ use twilight_model::id::Id;
 use twilight_model::id::marker::{ChannelMarker, GuildMarker, MessageMarker, UserMarker};
 use twilight_model::user::User;
 
-use crate::args::{Args, CommandArgs};
+use crate::args::{Args, CommandArgs, FromToken};
 use crate::autocomplete::Focused;
 use crate::error::{Error, Result};
 use crate::reply::Reply;
@@ -390,6 +390,89 @@ pub struct Values(pub Vec<String>);
 impl<'a> FromContext<'a> for Values {
     async fn from_context(ctx: &'a Context) -> Result<Self> {
         Ok(Values(ctx.values.clone()))
+    }
+}
+
+/// Extractor for the first value of a select menu.
+///
+/// Useful for single-select menus. If you need every value, use [`Values`] or
+/// the typed [`Selected`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectValue(pub String);
+
+impl std::ops::Deref for SelectValue {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl AsRef<str> for SelectValue {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for SelectValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+#[crate::async_trait]
+impl<'a> FromContext<'a> for SelectValue {
+    async fn from_context(ctx: &'a Context) -> Result<Self> {
+        ctx.values
+            .first()
+            .cloned()
+            .map(SelectValue)
+            .ok_or(Error::MissingResource("selected value"))
+    }
+}
+
+/// Typed values of a select menu, parsed with [`FromToken`].
+///
+/// Works for every select kind: `Selected<Id<UserMarker>>` for user menus,
+/// `Selected<Id<ChannelMarker>>` for channel menus and `Selected<String>` for
+/// string menus.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Selected<T>(pub Vec<T>);
+
+impl<T> Selected<T> {
+    /// Unwraps the values.
+    pub fn into_inner(self) -> Vec<T> {
+        self.0
+    }
+}
+
+impl<T> std::ops::Deref for Selected<T> {
+    type Target = [T];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> AsRef<[T]> for Selected<T> {
+    fn as_ref(&self) -> &[T] {
+        &self.0
+    }
+}
+
+#[crate::async_trait]
+impl<'a, T> FromContext<'a> for Selected<T>
+where
+    T: FromToken + Send + Sync + 'static,
+{
+    async fn from_context(ctx: &'a Context) -> Result<Self> {
+        let values = ctx
+            .values
+            .iter()
+            .map(|value| T::from_token(value, "selected value"))
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(Selected(values))
     }
 }
 

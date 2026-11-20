@@ -135,8 +135,8 @@ pub use lightning_core::{
     Button, ButtonStyle, ChannelId, ChoiceValue, Command, CommandArgs, CommandKind, Context,
     Cooldown, DmOnly, Embed, Error, Extras, Focused, FromContext, FromOptionValue, FromToken,
     Guild, GuildOnly, Interaction, IntoChoices, IntoReply, Member, Message, Middleware, Modal,
-    Next, OptionKind, OptionSpec, Reply, Responder, Result, State, StateMap, Subcommand, Surface,
-    UserId, Values, run_pipeline,
+    Next, OptionKind, OptionSpec, Reply, Responder, Result, SelectKind, SelectMenu, SelectValue,
+    Selected, State, StateMap, Subcommand, Surface, UserId, Values, run_pipeline,
 };
 
 /// Helpers for the macros (argument errors).
@@ -157,6 +157,7 @@ pub use serde_json;
 /// Twilight types you will need every day.
 pub mod model {
     pub use twilight_gateway::{Event, Intents};
+    pub use twilight_model::channel::ChannelType;
     pub use twilight_model::channel::message::Message as DiscordMessage;
     pub use twilight_model::channel::message::{Component, Embed as DiscordEmbed};
     pub use twilight_model::gateway::payload::incoming;
@@ -182,12 +183,12 @@ pub use twilight_http::Client;
 
 /// What you need in 99% of your files.
 pub mod prelude {
-    pub use crate::model::{DiscordMessage, Event, Id, Intents, PartialMember, User};
+    pub use crate::model::{ChannelType, DiscordMessage, Event, Id, Intents, PartialMember, User};
     pub use crate::{
         ActionRow, Args, AutocompleteChoice, Button, ButtonStyle, ChoiceValue, Command,
         CommandArgs, CommandKind, Context, Cooldown, Embed, Error, Focused, Lightning, Middleware,
-        Modal, Next, OptionKind, Reply, Result, State, Subcommand, UserId, Voice, VoiceConnection,
-        VoiceStates,
+        Modal, Next, OptionKind, Reply, Result, SelectKind, SelectMenu, SelectValue, Selected,
+        State, Subcommand, UserId, Values, Voice, VoiceConnection, VoiceStates,
     };
     pub use crate::{autocomplete, command, component, event, subcommand};
 }

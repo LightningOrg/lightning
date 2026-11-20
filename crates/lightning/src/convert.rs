@@ -511,7 +511,10 @@ pub(crate) fn split_custom_id(custom_id: &str) -> (&str, Option<Map<String, Valu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lightning_core::{ActionRow, Button, Embed as FrameworkEmbed, OptionSpec, Subcommand};
+    use lightning_core::{
+        ActionRow, Button, Embed as FrameworkEmbed, OptionSpec, SelectMenu, Subcommand,
+    };
+    use twilight_model::channel::ChannelType;
 
     static OPTIONS: &[OptionSpec] = &[
         OptionSpec {
@@ -742,6 +745,50 @@ mod tests {
         let components = to_components(&reply).expect("the buttons should be valid");
 
         assert_eq!(components.len(), 1);
+    }
+
+    #[test]
+    fn selects_convert_to_the_model() {
+        let reply = Reply::text("pick").components(vec![
+            ActionRow::new().select(
+                SelectMenu::text("pick", "Pick one")
+                    .option("a", "A")
+                    .option("b", "B")
+                    .min_values(1)
+                    .max_values(2),
+            ),
+        ]);
+
+        let components = to_components(&reply).expect("the select should be valid");
+        assert_eq!(components.len(), 1);
+
+        let Component::ActionRow(row) = &components[0] else {
+            panic!("expected an action row");
+        };
+        let Component::SelectMenu(menu) = &row.components[0] else {
+            panic!("expected a select menu");
+        };
+
+        assert_eq!(menu.custom_id, "pick");
+        assert_eq!(menu.options.as_ref().unwrap().len(), 2);
+        assert_eq!(menu.max_values, Some(2));
+    }
+
+    #[test]
+    fn channel_selects_convert_channel_types() {
+        let reply = Reply::text("where").components(vec![ActionRow::new().select(
+            SelectMenu::channel("dest", "Where?").channel_types([ChannelType::GuildText]),
+        )]);
+
+        let components = to_components(&reply).expect("the channel select should be valid");
+        let Component::ActionRow(row) = &components[0] else {
+            panic!("expected an action row");
+        };
+        let Component::SelectMenu(menu) = &row.components[0] else {
+            panic!("expected a select menu");
+        };
+
+        assert_eq!(menu.channel_types.as_ref().unwrap().len(), 1);
     }
 
     #[test]

@@ -40,11 +40,13 @@ pub use autocomplete::{
 pub use command::{Command, CommandKind};
 pub use context::{
     Author, ChannelId, Context, Extras, FromContext, Guild, Interaction, Member, Message,
-    Responder, Surface, UserId, Values,
+    Responder, SelectValue, Selected, Surface, UserId, Values,
 };
 pub use error::{Error, Result};
 pub use middleware::{Cooldown, DmOnly, GuildOnly, Middleware, Next, run_pipeline};
-pub use reply::{ActionRow, Button, ButtonStyle, Embed, IntoReply, Modal, Reply};
+pub use reply::{
+    ActionRow, Button, ButtonStyle, Embed, IntoReply, Modal, Reply, SelectKind, SelectMenu,
+};
 pub use state::{State, StateMap};
 pub use subcommand::Subcommand;
 

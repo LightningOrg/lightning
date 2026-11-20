@@ -20,7 +20,7 @@ async fn ping(ctx: Context) -> Reply {
 That's it. That command already answers both `/ping` and `!ping`, gets registered
 with Discord, and can be tested without a network connection.
 
-> **Status:** alpha (`0.1.3`). The API may change before `1.0`.
+> **Status:** alpha (`0.1.4`). The API may change before `1.0`.
 > Engine: [twilight](https://twilight.rs) `0.18`.
 
 ---
@@ -97,7 +97,7 @@ cargo run -p examples-basics
 On startup you'll see the banner:
 
 ```
-  Lightning v0.1.3
+  Lightning v0.1.4
   ─────────────────────────────────────
   Bot         Lightning#1234
   Servers     3
@@ -263,7 +263,9 @@ Lightning injects it.
 | `ChannelId` | current channel |
 | `Message` | source message (prefix) |
 | `Interaction` | the raw interaction |
-| `Values` | values from a select menu |
+| `Values` | raw values from a select menu |
+| `SelectValue` | first value of a select menu |
+| `Selected<T>` | typed values (`Selected<Id<UserMarker>>`) |
 | `Focused` | the option being typed (autocomplete) |
 
 ### Middleware
@@ -353,6 +355,58 @@ async fn on_confirm(args: Args<Choice>) -> Reply {
 The part after `:` is parsed as JSON and delivered as `Args<T>`, so a button's
 state travels **typed**. Modals are answered with
 `Reply::new().modal(Modal::new("id", "Title").text_input(...))`.
+
+### Select menus
+
+All five Discord kinds share one builder: classic string selects plus user, role,
+mentionable and channel pickers.
+
+```rust
+#[command]
+async fn poll() -> Reply {
+    Reply::text("What is the best color?").components(vec![
+        ActionRow::new().select(
+            SelectMenu::text("poll", "Choose a color")
+                .option("red", "Red")
+                .option("green", "Green")
+                .option("blue", "Blue"),
+        ),
+    ])
+}
+
+#[component("poll")]
+async fn on_poll(values: Selected<String>) -> Reply {
+    Reply::text(format!("you picked {}", values.join(", ")))
+}
+```
+
+Values arrive as raw strings in `Values`, as a single `SelectValue`, or typed
+with `Selected<T>`. Picker values are snowflakes, so
+`Selected<Id<UserMarker>>`, `Selected<Id<RoleMarker>>` and
+`Selected<Id<ChannelMarker>>` parse them for you:
+
+```rust
+#[command(guild_only)]
+async fn pick_user() -> Reply {
+    Reply::text("Who should get a cookie?").components(vec![
+        ActionRow::new().select(SelectMenu::user("pick-user", "Choose a member")),
+    ])
+}
+
+#[component("pick-user")]
+async fn on_pick_user(values: Selected<Id<UserMarker>>) -> Reply {
+    let Some(user) = values.first() else {
+        return Reply::text("no one selected").ephemeral();
+    };
+
+    Reply::text(format!("<@{}> gets a cookie", user.get()))
+}
+```
+
+Selects are **components**, not commands: same `#[component]` dispatcher, same
+middleware, same `Reply`. Channel menus can be narrowed with
+`.channel_types([ChannelType::GuildText])`, and every kind accepts
+`.min_values(..)`, `.max_values(..)` and `.disabled(..)`.
 
 ### Events
 
@@ -528,7 +582,7 @@ cargo run -p examples-basics
 - [x] Voice: join, playback, text-in-voice chat and moderation.
 - [x] Typed autocomplete (`#[autocomplete]`).
 - [x] Subcommands and groups (`#[subcommand]`).
-- [ ] First-class select menus.
+- [x] First-class select menus.
 - [ ] Receiving voice (transcription) and per-user volume.
 - [ ] Sharding through `ShardManager` and `twilight-gateway-queue` (today: own shards).
 - [ ] `lightning dev` with hot reload.

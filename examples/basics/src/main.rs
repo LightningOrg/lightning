@@ -1,6 +1,6 @@
 //! Complete Lightning example:
-//! slash + prefix commands, typed arguments, state, middleware, buttons, events
-//! and voice channels (join, play audio, text chat and moderation).
+//! slash + prefix commands, typed arguments, state, middleware, buttons, select
+//! menus, events and voice channels (join, play audio, text chat and moderation).
 //!
 //! Run it with:
 //!
@@ -193,6 +193,43 @@ async fn on_confirm(args: Args<Choice>) -> Reply {
         "yes" => Reply::text("done!"),
         _ => Reply::text("cancelled, no hard feelings"),
     }
+}
+
+/// Pick a color from a dropdown.
+#[command]
+async fn poll() -> Reply {
+    Reply::text("What is the best color?").components(vec![
+        ActionRow::new().select(
+            SelectMenu::text("poll", "Choose a color")
+                .option("red", "Red")
+                .option("green", "Green")
+                .option("blue", "Blue"),
+        ),
+    ])
+}
+
+/// Answer to the poll.
+#[component("poll")]
+async fn on_poll(values: Selected<String>) -> Reply {
+    Reply::text(format!("You picked **{}**.", values.join(", ")))
+}
+
+/// Pick a member with a user select menu.
+#[command(guild_only)]
+async fn pick_user() -> Reply {
+    Reply::text("Who should get a cookie?").components(vec![
+        ActionRow::new().select(SelectMenu::user("pick-user", "Choose a member")),
+    ])
+}
+
+/// Answer to the user picker.
+#[component("pick-user")]
+async fn on_pick_user(values: Selected<Id<UserMarker>>) -> Reply {
+    let Some(user) = values.first() else {
+        return Reply::text("No one selected.").ephemeral();
+    };
+
+    Reply::text(format!("<@{}> gets a cookie.", user.get()))
 }
 
 /// Counts the people in your voice channel.
